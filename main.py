@@ -45,6 +45,7 @@ def main(page: ft.Page):
         label="Заметка (необязательно)",
         hint_text="например, после жаропонижающего",
         expand=True,
+        expand_loose=True,
     )
     text_stats = ft.Text("", color=ft.Colors.GREY_700, size=16)
     text_error = ft.Text("", color=ft.Colors.RED_600)
@@ -151,9 +152,20 @@ def main(page: ft.Page):
     button_add = ft.Button("Добавить", on_click=lambda e: run(add, e))
     button_clear = ft.TextButton("Очистить всё", on_click=lambda e: run(ask_clear, e))
 
+    # три строки вместо одной на телефоне: температура+кнопка, заметка на всю ширину
+    input_row = ft.ResponsiveRow(
+        [
+            ft.Container(field_temp, col={"xs": 5}),
+            ft.Container(button_add, col={"xs": 7}),
+            ft.Container(field_note, col={"xs": 12}),
+        ],
+        spacing=10,
+        vertical_alignment=ft.CrossAxisAlignment.END,
+    )
+
     page.add(
         ft.Text("Дневник температуры ребёнка", size=24, weight=ft.FontWeight.BOLD),
-        ft.Row([field_temp, field_note, button_add]),
+        input_row,
         text_error,
         text_stats,
         ft.Row([button_clear]),
