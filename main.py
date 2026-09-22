@@ -39,7 +39,8 @@ def main(page: ft.Page):
         label="Температура, °C",
         hint_text="например, 36,6",
         width=170,
-        keyboard_type=ft.KeyboardType.NUMBER,
+        # Decimal: клавиатура с запятой (иначе на iPhone ввести «36,6» нельзя)
+        keyboard_type=ft.KeyboardType.DATETIME,
     )
     field_note = ft.TextField(
         label="Заметка (необязательно)",
