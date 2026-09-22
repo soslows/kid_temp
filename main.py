@@ -6,7 +6,14 @@ from datetime import datetime
 
 import flet as ft
 
-from logic import compute_stats, format_datetime, format_temperature, parse_temperature, sort_records
+from logic import (
+    compute_stats,
+    format_datetime,
+    format_temperature,
+    med_status_text,
+    parse_temperature,
+    sort_records,
+)
 
 # Ключ, под которым записи лежат в локальном хранилище (SharedPreferences).
 STORAGE_KEY = "kidtemp_entries"
@@ -49,6 +56,7 @@ def main(page: ft.Page):
         expand_loose=True,
     )
     text_stats = ft.Text("", color=ft.Colors.GREY_700, size=16)
+    text_med = ft.Text("", size=17, weight=ft.FontWeight.W_600)
     text_error = ft.Text("", color=ft.Colors.RED_600)
     records_column = ft.Column(spacing=6)
 
@@ -88,6 +96,8 @@ def main(page: ft.Page):
                 last_t=format_temperature(stats["last"]["t"]),
                 last_dt=format_datetime(stats["last"]["dt"]),
             )
+        # строка про жаропонижающее — над историей, всегда «свежая»
+        text_med.value = med_status_text(records, datetime.now())
         page.update()
 
     def run(coro_func, *args):
@@ -168,6 +178,7 @@ def main(page: ft.Page):
         ft.Text("Дневник температуры ребёнка", size=24, weight=ft.FontWeight.BOLD),
         input_row,
         text_error,
+        text_med,
         text_stats,
         ft.Row([button_clear]),
         ft.Divider(),

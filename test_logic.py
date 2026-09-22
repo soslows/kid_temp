@@ -48,5 +48,42 @@ check("максимум", stats["max_t"] == 39.0)
 check("последнее", stats["last"]["t"] == 38.5)
 check("пустой список -> None", compute_stats([]) is None)
 
+# --- жаропонижающие ---
+from datetime import datetime
+from logic import detect_meds, find_last_med, format_elapsed_since, med_status_text
+
+check("«дали нурофен» -> нурофен", detect_meds("дали нурофен") == "нурофен")
+check("«Нурофен» с большой буквы тоже", detect_meds("Нурофен 5 мл") == "нурофен")
+check("«парацетамол» -> парацетамол", detect_meds("сироп парацетамол") == "парацетамол")
+check("«цефикон» = парацетамол", detect_meds("поставила цефикон") == "парацетамол")
+check("обычная заметка -> None", detect_meds("потливость ночью") is None)
+check("пустая заметка -> None", detect_meds("") is None)
+
+meds_records = [
+    {"dt": "2026-09-22 13:00", "t": 38.0, "note": ""},
+    {"dt": "2026-09-22 09:30", "t": 39.1, "note": "дала нурофен"},
+    {"dt": "2026-09-22 08:00", "t": 39.5, "note": "парацетамол утром"},
+]
+last = find_last_med(meds_records)
+check("последнее жаропонижающее — нурофен из 09:30", last == {"med": "нурофен", "dt": "2026-09-22 09:30"})
+check("нет лекарств -> None", find_last_med(records) is None)
+
+check("5 ч 30 мин", format_elapsed_since("2026-09-22 08:00", datetime(2026, 9, 22, 13, 30)) == "5 ч 30 мин")
+check("ровно 2 ч", format_elapsed_since("2026-09-22 11:00", datetime(2026, 9, 22, 13, 0)) == "2 ч")
+check("40 мин", format_elapsed_since("2026-09-22 12:20", datetime(2026, 9, 22, 13, 0)) == "40 мин")
+
+now = datetime(2026, 9, 22, 13, 0)
+status = med_status_text(meds_records, now)
+check("3,5 ч после нурофена — ещё нельзя", "Раньше чем через 6 ч" in status and "3 ч 30 мин" in status)
+
+soon = datetime(2026, 9, 22, 10, 0)
+check("через полчаса после приёма — нельзя", "нельзя" in med_status_text(meds_records, soon))
+
+late = datetime(2026, 9, 22, 16, 0)
+check("6,5 ч — уже можно", "Уже можно" in med_status_text(meds_records, late))
+
+no_meds = [{"dt": "2026-09-22 10:00", "t": 37.0, "note": "просто измерили"}]
+check("без лекарств строка пустая", med_status_text(no_meds, now) == "")
+
 print()
 print("Все проверки пройдены.")
