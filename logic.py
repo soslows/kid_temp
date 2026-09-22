@@ -1,7 +1,7 @@
 # logic.py — вычисления без интерфейса: разбор и форматирование температуры, статистика.
 # Этот файл ничего не знает про экран — поэтому его легко проверять тестами (test_logic.py).
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 def parse_temperature(text):
@@ -150,6 +150,9 @@ def med_status_text(records, now):
         prefix += " ({} {} назад.)".format(same_last["med"], format_elapsed_since(same_last["dt"], now))
 
     if ref_hours < required:
-        return "{} Раньше чем через {} ч повторять нельзя.".format(
-            prefix, format_temperature(required).rstrip(",0"))
+        # когда именно наступит «можно» — чтобы не считать в голове
+        allowed_at = datetime.strptime(reference["dt"], "%Y-%m-%d %H:%M") + timedelta(hours=required)
+        allowed_text = allowed_at.strftime("%H:%M")
+        return "{} Раньше чем через {} ч повторять нельзя (можно с {}).".format(
+            prefix, format_temperature(required).rstrip(",0"), allowed_text)
     return "{} Уже можно.".format(prefix)
