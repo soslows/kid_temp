@@ -59,11 +59,24 @@ FEVER_MEDS = {
     "ибупрофен": "нурофен",
 }
 
-# Минимальный интервал между приёмами одного препарата (часы) — из детских инструкций.
+# Минимальный интервал между приёмами одного препарата (часы).
+# Источники (проверено вебом 22.09):
+#   - Бутрий/Катасонов (статья Катасонова, chips-journal.ru, «Как правильно сбивать
+#     ребенку температуру»): нурофен (ибупрофен 10 мг/кг) — «не чаще чем один раз
+#     в четыре часа, но желательно не больше трех раз в сутки»; парацетамол 15 мг/кг —
+#     «ориентируйтесь на инструкции к препаратам парацетамола» (в инструкциях — 4 ч,
+#     не более 4 раз в сутки);
+#   - docdeti.ru (педиатрическая база): ибупрофен — каждые 6 часов; парацетамол —
+#     каждые 4–6 часов. Это консервативнее (инструкции производителей).
+# Берём перестраховочные значения из инструкций: парацетамол 4 ч, нурофен 6 ч.
+# Второй ДРУГОЙ препарат при неэффективности первого (нурофен после панадола):
+#   по Катасонову/Бутрию — «часа через полтора-два после первого» → CROSS_INTERVAL_HOURS = 2.
 MIN_INTERVAL_HOURS = {
     "парацетамол": 4.0,
     "нурофен": 6.0,
 }
+# Зазор между разными препаратами при чередовании (Катасонов: «через полтора-два часа»).
+CROSS_INTERVAL_HOURS = 2.0
 
 
 def detect_meds(note_text):
@@ -107,15 +120,36 @@ def format_elapsed_since(dt_text, now):
 def med_status_text(records, now):
     """Готовая строка над историей: что и когда было, и можно ли уже давать.
 
+    Правила (по Катасонову/Бутрию, chips-journal 2018):
+      - повтор того же препарата: свой минимум (парацетамол 4 ч, нурофен 6 ч по инструкции;
+        Бутрий считает допустимым нурофен раз в 4 ч — мы консервативнее);
+      - другой препарат при неэффективности первого: не раньше чем через 1,5–2 ч после первого.
+    В строке показываем И последний приём, И последний приём этого же препарата,
+    если между ними был другой — чтобы интервал «нельзя раньше» всегда честный.
+
     now — datetime текущего момента (передаём снаружи, чтобы логику можно было тестировать).
     """
     last = find_last_med(records)
     if not last:
         return ""
     elapsed = format_elapsed_since(last["dt"], now)
-    interval = MIN_INTERVAL_HOURS[last["med"]]
-    passed_hours = (now - datetime.strptime(last["dt"], "%Y-%m-%d %H:%M")).total_seconds() / 3600
-    if passed_hours < interval:
-        return ("💊 {} — {} назад. Раньше чем через {} ч повторять нельзя.".format(
-            last["med"], elapsed, format_temperature(interval).rstrip(",0")))
-    return "💊 {} — {} назад. Уже можно.".format(last["med"], elapsed)
+
+    # Последний приём ТОГО ЖЕ препарата (для честного интервала повтора).
+    same_last = None
+    for rec in sort_records(records):
+        if detect_meds(rec.get("note", "")) == last["med"]:
+            same_last = rec
+            break
+
+    required = MIN_INTERVAL_HOURS[last["med"]]
+    reference = same_last if same_last is not None else last
+    ref_hours = (now - datetime.strptime(reference["dt"], "%Y-%m-%d %H:%M")).total_seconds() / 3600
+
+    prefix = "💊 {} — {} назад.".format(last["med"], elapsed)
+    if same_last is not None and same_last["dt"] != last["dt"]:
+        prefix += " ({} {} назад.)".format(same_last["med"], format_elapsed_since(same_last["dt"], now))
+
+    if ref_hours < required:
+        return "{} Раньше чем через {} ч повторять нельзя.".format(
+            prefix, format_temperature(required).rstrip(",0"))
+    return "{} Уже можно.".format(prefix)
