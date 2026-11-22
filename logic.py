@@ -78,6 +78,12 @@ MIN_INTERVAL_HOURS = {
 # Зазор между разными препаратами при чередовании (Катасонов: «через полтора-два часа»).
 CROSS_INTERVAL_HOURS = 2.0
 
+# Родительный падеж для фраз вида «2 ч после нурофена».
+MED_GENITIVE = {
+    "нурофен": "нурофена",
+    "парацетамол": "парацетамола",
+}
+
 
 def detect_meds(note_text):
     """Ищет жаропонижающее в тексте заметки. Нашёл — возвращает имя препарата, нет — None."""
@@ -117,42 +123,85 @@ def format_elapsed_since(dt_text, now):
     return "{} ч {} мин".format(hours, rest)
 
 
-def med_status_text(records, now):
-    """Готовая строка над историей: что и когда было, и можно ли уже давать.
+def _hours_text(hours):
+    """4.0 -> «4», 4.5 -> «4,5»."""
+    if hours == int(hours):
+        return str(int(hours))
+    return format_temperature(hours)
+
+
+def med_status_lines(records, now):
+    """Статусы жаропонижающих: по строке на каждый препарат.
 
     Правила (по Катасонову/Бутрию, chips-journal 2018):
       - повтор того же препарата: свой минимум (парацетамол 4 ч, нурофен 6 ч по инструкции;
         Бутрий считает допустимым нурофен раз в 4 ч — мы консервативнее);
-      - другой препарат при неэффективности первого: не раньше чем через 1,5–2 ч после первого.
-    В строке показываем И последний приём, И последний приём этого же препарата,
-    если между ними был другой — чтобы интервал «нельзя раньше» всегда честный.
+      - другой препарат: не раньше чем через 2 ч после последнего приёма (CROSS_INTERVAL_HOURS);
+      - показываем ОБА препарата, даже если второй ещё не давали: когда можно начать его.
+    Порядок строк: самый свежий приём сверху.
 
     now — datetime текущего момента (передаём снаружи, чтобы логику можно было тестировать).
     """
-    last = find_last_med(records)
-    if not last:
-        return ""
-    elapsed = format_elapsed_since(last["dt"], now)
-
-    # Последний приём ТОГО ЖЕ препарата (для честного интервала повтора).
-    same_last = None
+    if not records:
+        return []
+    # последний приём каждого препарата
+    last_by_med = {}
     for rec in sort_records(records):
-        if detect_meds(rec.get("note", "")) == last["med"]:
-            same_last = rec
-            break
+        med = detect_meds(rec.get("note", ""))
+        if med and med not in last_by_med:
+            last_by_med[med] = rec["dt"]
+    if not last_by_med:
+        return []
 
-    required = MIN_INTERVAL_HOURS[last["med"]]
-    reference = same_last if same_last is not None else last
-    ref_hours = (now - datetime.strptime(reference["dt"], "%Y-%m-%d %H:%M")).total_seconds() / 3600
+    lines = []
+    # препараты, которые уже давали: самый свежий приём сверху
+    for med, dt_text in sorted(last_by_med.items(), key=lambda item: item[1], reverse=True):
+        lines.append(_line_given(med, dt_text, last_by_med, now))
+    # препараты, которых ещё не было: подсказка, когда можно начать
+    for med in MIN_INTERVAL_HOURS:
+        if med not in last_by_med:
+            lines.append(_line_not_given(med, last_by_med, now))
+    return lines
 
-    prefix = "💊 {} — {} назад.".format(last["med"], elapsed)
-    if same_last is not None and same_last["dt"] != last["dt"]:
-        prefix += " ({} {} назад.)".format(same_last["med"], format_elapsed_since(same_last["dt"], now))
 
-    if ref_hours < required:
-        # когда именно наступит «можно» — чтобы не считать в голове
-        allowed_at = datetime.strptime(reference["dt"], "%Y-%m-%d %H:%M") + timedelta(hours=required)
-        allowed_text = allowed_at.strftime("%H:%M")
-        return "{} Раньше чем через {} ч повторять нельзя (можно с {}).".format(
-            prefix, format_temperature(required).rstrip(",0"), allowed_text)
+def _line_given(med, dt_text, last_by_med, now):
+    """Строка-статус для препарата, который уже давали.
+
+    «Можно с» = что позже: свой минимум от последнего приёма этого препарата
+    или 2 ч от последнего приёма другого (чередование). Чтобы интервал был честным.
+    """
+    then = datetime.strptime(dt_text, "%Y-%m-%d %H:%M")
+    prefix = "💊 {} — {} назад.".format(med, format_elapsed_since(dt_text, now))
+
+    allowed = then + timedelta(hours=MIN_INTERVAL_HOURS[med])
+    cross_other = None
+    for other, other_dt in last_by_med.items():
+        if other == med:
+            continue
+        cross_allowed = datetime.strptime(other_dt, "%Y-%m-%d %H:%M") + timedelta(hours=CROSS_INTERVAL_HOURS)
+        if cross_allowed > allowed:
+            allowed = cross_allowed
+            cross_other = other
+
+    if now < allowed:
+        when = allowed.strftime("%H:%M")
+        if cross_other:
+            return "{} Повторять нельзя раньше {} (чередование: {} ч после {}).".format(
+                prefix, when, _hours_text(CROSS_INTERVAL_HOURS), MED_GENITIVE.get(cross_other, cross_other))
+        return "{} Повторять нельзя раньше {}.".format(prefix, when)
     return "{} Уже можно.".format(prefix)
+
+
+def _line_not_given(med, last_by_med, now):
+    """Строка для препарата, который ещё не давали: когда можно начать."""
+    other_med, other_dt = max(last_by_med.items(), key=lambda item: item[1])
+    allowed = datetime.strptime(other_dt, "%Y-%m-%d %H:%M") + timedelta(hours=CROSS_INTERVAL_HOURS)
+    if now < allowed:
+        return "💊 {}: ещё не давали. Можно с {} (чередование: {} ч после {}).".format(
+            med, allowed.strftime("%H:%M"), _hours_text(CROSS_INTERVAL_HOURS), MED_GENITIVE.get(other_med, other_med))
+    return "💊 {}: ещё не давали. Уже можно.".format(med)
+
+
+def med_status_text(records, now):
+    """Готовый текст над историей: строки через перенос. Пусто — если лекарств нет."""
+    return "\n".join(med_status_lines(records, now))
