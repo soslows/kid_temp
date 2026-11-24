@@ -33,10 +33,7 @@ jobs:
         run: pip install flet==1.0.0
 
       - name: Build web
-        run: flet build web
-
-      - name: Fix base href for Pages path
-        run: sed -i 's|<base href="/">|<base href="/kid_temp/">|' build/web/index.html
+        run: flet build web --yes --base-url /kid_temp/ --no-rich-output
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
