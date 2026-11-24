@@ -1,4 +1,4 @@
-name: Deploy kid-temp to GitHub Pages
+name: Build & Deploy kid-temp to GitHub Pages
 
 on:
   push:
@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build-deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -23,6 +23,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install flet
+        run: pip install flet==1.0.0
+
+      - name: Build web
+        run: flet build web
+
+      - name: Fix base href for Pages path
+        run: sed -i 's|<base href="/">|<base href="/kid_temp/">|' build/web/index.html
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

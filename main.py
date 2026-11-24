@@ -12,6 +12,8 @@ from logic import (
     format_temperature,
     med_status_text,
     parse_temperature,
+    record_datetime,
+    replace_time,
     sort_records,
 )
 
@@ -35,6 +37,8 @@ async def save_records(page, prefs, records):
 def main(page: ft.Page):
     page.title = "Дневник температуры ребёнка"
     page.padding = 20
+    # страница прокручивается, когда записей больше, чем влезает на экран
+    page.scroll = ft.ScrollMode.AUTO
 
     # Хранилище — это «сервис»: подключаем к странице, дальше читаем/пишем.
     prefs = ft.SharedPreferences()
@@ -54,6 +58,13 @@ def main(page: ft.Page):
         hint_text="например, после жаропонижающего",
         expand=True,
         expand_loose=True,
+    )
+    field_time = ft.TextField(
+        label="Время, ЧЧ:ММ (необязательно)",
+        hint_text="если время упущено — впиши, например 15:40",
+        width=170,
+        # DATETIME: на iPhone клавиатура с «:»
+        keyboard_type=ft.KeyboardType.DATETIME,
     )
     text_stats = ft.Text("", color=ft.Colors.GREY_700, size=16)
     text_med = ft.Text("", size=17, weight=ft.FontWeight.W_600)
@@ -77,6 +88,11 @@ def main(page: ft.Page):
                 ft.Row(
                     controls=[
                         ft.Text(shown, size=16, expand=True),
+                        ft.IconButton(
+                            icon=ft.Icons.EDIT_OUTLINE,
+                            tooltip="Править запись",
+                            on_click=lambda e, r=rec: open_edit(r),
+                        ),
                         ft.IconButton(
                             icon=ft.Icons.DELETE_OUTLINE,
                             tooltip="Удалить запись",
@@ -113,9 +129,15 @@ def main(page: ft.Page):
             return
 
         records = await load_records(page, prefs)
+        time_text = (field_time.value or "").strip()
+        dt_str = record_datetime(time_text, datetime.now())
+        if dt_str is None:
+            text_error.value = "Время — ЧЧ:ММ, например 15:40 (не в будущем)."
+            page.update()
+            return
         records.append(
             {
-                "dt": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "dt": dt_str,
                 "t": temp,
                 "note": (field_note.value or "").strip(),
             }
@@ -124,6 +146,7 @@ def main(page: ft.Page):
 
         # очищаем поля и убираем прошлую ошибку
         field_temp.value = ""
+        field_time.value = ""
         field_note.value = ""
         text_error.value = ""
         await refresh()
@@ -160,15 +183,75 @@ def main(page: ft.Page):
             )
         )
 
+    # --- правка записи: карандаш у записи открывает диалог с её полями ---
+
+    field_edit_temp = ft.TextField(
+        label="Температура, °C",
+        keyboard_type=ft.KeyboardType.DATETIME,
+        width=170,
+    )
+    field_edit_time = ft.TextField(
+        label="Время, ЧЧ:ММ",
+        hint_text="пусто = оставить как было",
+        keyboard_type=ft.KeyboardType.DATETIME,
+        width=170,
+    )
+    field_edit_note = ft.TextField(label="Заметка", expand=True, expand_loose=True)
+    text_edit_error = ft.Text("", color=ft.Colors.RED_600)
+    editing_rec = None  # какую запись сейчас правим
+
+    def open_edit(rec):
+        nonlocal editing_rec
+        editing_rec = rec
+        field_edit_temp.value = format_temperature(rec["t"])
+        field_edit_time.value = rec["dt"][11:16]
+        field_edit_note.value = rec["note"] or ""
+        text_edit_error.value = ""
+        page.show_dialog(
+            ft.AlertDialog(
+                title=ft.Text("Правка записи"),
+                content=ft.Column(
+                    [field_edit_temp, field_edit_time, field_edit_note, text_edit_error],
+                    tight=True,
+                    spacing=10,
+                ),
+                actions=[
+                    ft.TextButton("Отмена", on_click=close_dlg),
+                    ft.Button("Сохранить", on_click=lambda e: run(save_edit, e)),
+                ],
+            )
+        )
+
+    async def save_edit(e):
+        temp = parse_temperature(field_edit_temp.value)
+        if temp is None:
+            text_edit_error.value = "Введите число, например 36,6 (от 30 до 45)."
+            page.update()
+            return
+        new_dt = replace_time(editing_rec["dt"], (field_edit_time.value or "").strip(), datetime.now())
+        if new_dt is None:
+            text_edit_error.value = "Время — ЧЧ:ММ, например 15:40 (не в будущем)."
+            page.update()
+            return
+        records = await load_records(page, prefs)
+        for i, r in enumerate(records):
+            if r == editing_rec:
+                records[i] = {"dt": new_dt, "t": temp, "note": (field_edit_note.value or "").strip()}
+                break
+        await save_records(page, prefs, records)
+        close_dlg(e)
+        await refresh()
+
     button_add = ft.Button("Добавить", on_click=lambda e: run(add, e))
     button_clear = ft.TextButton("Очистить всё", on_click=lambda e: run(ask_clear, e))
 
-    # три строки вместо одной на телефоне: температура+кнопка, заметка на всю ширину
+    # на телефоне: температура и время в строку, заметка на всю ширину, кнопка на всю ширину
     input_row = ft.ResponsiveRow(
         [
             ft.Container(field_temp, col={"xs": 5}),
-            ft.Container(button_add, col={"xs": 7}),
+            ft.Container(field_time, col={"xs": 7}),
             ft.Container(field_note, col={"xs": 12}),
+            ft.Container(button_add, col={"xs": 12}),
         ],
         spacing=10,
         vertical_alignment=ft.CrossAxisAlignment.END,

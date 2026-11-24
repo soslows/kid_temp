@@ -130,6 +130,60 @@ def _hours_text(hours):
     return format_temperature(hours)
 
 
+# --- Время записи: задним числом и правка ---
+
+def parse_time_hhmm(text):
+    """«17:30» или «9:05» -> «17:30», «09:05» (всегда ЧЧ:ММ с нулями — иначе сортировка строк ломается).
+
+    Ошибка -> None.
+    """
+    if not text:
+        return None
+    parts = text.strip().split(":")
+    if len(parts) != 2:
+        return None
+    try:
+        hours, minutes = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    if not (0 <= hours <= 23 and 0 <= minutes <= 59):
+        return None
+    return "{:02d}:{:02d}".format(hours, minutes)
+
+
+def record_datetime(time_text, now):
+    """Полная дата-время НОВОЙ записи: время с клавиатуры или «сейчас».
+
+    time_text — «ЧЧ:ММ» или пусто/None (= сейчас). Дата всегда сегодня.
+    Время из будущего — ошибка (None): измерение не может быть вперёд.
+    """
+    if not time_text:
+        return now.strftime("%Y-%m-%d %H:%M")
+    hhmm = parse_time_hhmm(time_text)
+    if hhmm is None:
+        return None
+    result = datetime.strptime(now.strftime("%Y-%m-%d") + " " + hhmm, "%Y-%m-%d %H:%M")
+    if result > now:
+        return None
+    return result.strftime("%Y-%m-%d %H:%M")
+
+
+def replace_time(dt_text, time_text, now):
+    """Меняет время в существующей записи «2026-11-21 20:00» на «21:30», дату не трогает.
+
+    Пустое время -> запись без изменений. Неверное время или будущее -> None.
+    """
+    if not time_text:
+        return dt_text
+    hhmm = parse_time_hhmm(time_text)
+    if hhmm is None:
+        return None
+    result = datetime.strptime(dt_text[:11] + hhmm, "%Y-%m-%d %H:%M")
+    if result > now:
+        return None
+    return dt_text[:11] + hhmm
+
+
 def med_status_lines(records, now):
     """Статусы жаропонижающих: по строке на каждый препарат.
 

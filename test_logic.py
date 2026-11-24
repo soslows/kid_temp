@@ -115,5 +115,24 @@ check("подсказка: парацетамол можно с 19:30",
 lines = med_status_lines(only_nurofen, datetime(2026, 9, 22, 21, 0))
 check("прошло 2 ч — парацетамол можно", "Уже можно" in lines[1])
 
+# --- время записи: задним числом и правка ---
+from logic import parse_time_hhmm, record_datetime, replace_time
+
+check("«17:30» -> «17:30»", parse_time_hhmm("17:30") == "17:30")
+check("«9:05» -> «09:05» (нули важны для сортировки)", parse_time_hhmm("9:05") == "09:05")
+check("«25:00» -> None", parse_time_hhmm("25:00") is None)
+check("«17-30» -> None", parse_time_hhmm("17-30") is None)
+check("пусто -> None", parse_time_hhmm("") is None)
+
+now = datetime(2026, 11, 22, 18, 0)
+check("пустое время -> сейчас", record_datetime("", now) == "2026-11-22 18:00")
+check("задним числом 15:40", record_datetime("15:40", now) == "2026-11-22 15:40")
+check("время из будущего -> None", record_datetime("23:50", now) is None)
+check("мусорное время -> None", record_datetime("когда-то", now) is None)
+
+check("правка времени: дата сохраняется", replace_time("2026-11-21 20:00", "21:30", now) == "2026-11-21 21:30")
+check("правка: пустое время = без изменений", replace_time("2026-11-21 20:00", "", now) == "2026-11-21 20:00")
+check("правка: время из будущего -> None", replace_time("2026-11-22 20:00", "23:50", now) is None)
+
 print()
 print("Все проверки пройдены.")
