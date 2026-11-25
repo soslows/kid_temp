@@ -42,11 +42,12 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: build/web
+          retention-days: 3
 
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
         with:
-          timeout: 900000
-          error_count: 10
-          reporting_interval: 5000
+          error_count: 15
+          reporting_interval: 3000
+          timeout: 600000
