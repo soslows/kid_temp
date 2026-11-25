@@ -134,5 +134,46 @@ check("правка времени: дата сохраняется", replace_ti
 check("правка: пустое время = без изменений", replace_time("2026-11-21 20:00", "", now) == "2026-11-21 20:00")
 check("правка: время из будущего -> None", replace_time("2026-11-22 20:00", "23:50", now) is None)
 
+# --- копия записей: CSV экспорт/импорт, слияние ---
+from logic import merge_records, parse_csv, records_to_csv
+
+backup_records = [
+    {"dt": "2026-11-20 12:06", "t": 38.9, "note": "парацетамол 10мл"},
+    {"dt": "2026-11-20 04:14", "t": 38.2, "note": ""},
+    {"dt": "2026-11-19 23:42", "t": 39.1, "note": "нурофен"},
+]
+csv_text = records_to_csv(backup_records)
+check("CSV: шапка на месте", csv_text.startswith("дата;время;температура;заметка"))
+check("CSV: свежая запись сверху", "2026-11-20;12:06;38,9;парацетамол 10мл" in csv_text)
+check("CSV: заметка пустая не ломает строку", "2026-11-20;04:14;38,2;" in csv_text)
+
+parsed, skipped = parse_csv(csv_text)
+check("CSV: обратно все 3 записи", len(parsed) == 3 and skipped == 0)
+check("CSV: круговая поездка без потерь", sorted(map(str, parsed)) == sorted(map(str, backup_records)))
+
+parsed_semi, _ = parse_csv("2026-11-20;12:06;38,9;нурофен")
+check("CSV: строка без заметки тоже ок", len(parsed_semi) == 1 and parsed_semi[0]["note"] == "нурофен")
+
+parsed_dot, _ = parse_csv("20.11.2026;06:36;39,2;нурофен")
+check("CSV: дата точками понимается", parsed_dot[0]["dt"] == "2026-11-20 06:36")
+
+parsed_comma, _ = parse_csv("2026-11-20,06:36,39.2,нурофен")
+check("CSV: запятая-разделитель с точкой в числе",
+      parsed_comma[0]["t"] == 39.2 and parsed_comma[0]["note"] == "нурофен")
+
+_, skipped_bad = parse_csv("мусор\n2026-13-40;99:99;45,0\n")
+check("CSV: битые строки пропускаются", skipped_bad == 2)
+
+merged, added = merge_records(backup_records, parsed)
+check("слияние: дубликаты не задваиваются", added == 0 and len(merged) == 3)
+
+merged, added = merge_records([], parsed)
+check("слияние в пустой список: все добавлены", added == 3 and len(merged) == 3)
+
+merged, added = merge_records(
+    [{"dt": "2026-11-20 12:06", "t": 38.9, "note": "другая заметка"}], parsed)
+check("слияние: та же дата+температура = дубль, заметка не трогается",
+      added == 2 and merged[0]["note"] == "другая заметка")
+
 print()
 print("Все проверки пройдены.")

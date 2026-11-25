@@ -46,6 +46,86 @@ def compute_stats(records):
     }
 
 
+# --- Копия записей: экспорт CSV и импорт обратно ---
+
+def records_to_csv(records):
+    """Записи -> текст CSV. Колонки: дата, время, температура, заметка.
+
+    Формат даты/времени раздельный — так файл открывается в Excel как таблица.
+    """
+    lines = ["дата;время;температура;заметка"]
+    for rec in sort_records(records):
+        lines.append("{};{};{};{}".format(
+            rec["dt"][:10],
+            rec["dt"][11:16],
+            format_temperature(rec["t"]),
+            rec.get("note", ""),
+        ))
+    return "\n".join(lines) + "\n"
+
+
+def parse_csv(text):
+    """CSV (как из records_to_csv) -> список записей. Битые строки пропускает.
+
+    Понимает и «;» и «,» как разделитель, дату «2026-11-20» и «20.11.2026».
+    Возвращает (записи, количество пропущенных строк).
+    """
+    records = []
+    skipped = 0
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split(";") if ";" in line else line.split(",")
+        if len(parts) < 3:
+            skipped += 1
+            continue
+        date_text, time_text, temp_text = parts[0].strip(), parts[1].strip(), parts[2].strip()
+        note = parts[3].strip() if len(parts) > 3 else ""
+        # шапку пропускаем
+        if date_text == "дата":
+            continue
+        dt_text = _parse_backup_date(date_text, time_text)
+        temp = parse_temperature(temp_text)
+        if dt_text is None or temp is None:
+            skipped += 1
+            continue
+        records.append({"dt": dt_text, "t": temp, "note": note})
+    return records, skipped
+
+
+def _parse_backup_date(date_text, time_text):
+    """«2026-11-20» или «20.11.2026» + «06:36» -> «2026-11-20 06:36». Ошибка -> None."""
+    hhmm = parse_time_hhmm(time_text)
+    if hhmm is None:
+        return None
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y"):
+        try:
+            day = datetime.strptime(date_text, fmt)
+        except ValueError:
+            continue
+        return day.strftime("%Y-%m-%d") + " " + hhmm
+    return None
+
+
+def merge_records(existing, incoming):
+    """Приливает скопированные записи к текущим. Дубликаты (та же дата-время И та же температура) не задваивает.
+
+    Возвращает (объединённый список, сколько добавлено).
+    """
+    known = {(r["dt"], r["t"]) for r in existing}
+    added = 0
+    result = list(existing)
+    for rec in incoming:
+        key = (rec["dt"], rec["t"])
+        if key in known:
+            continue
+        result.append(rec)
+        known.add(key)
+        added += 1
+    return result, added
+
+
 # --- Жаропонижающие: распознаём в заметках и считаем время с последнего приёма ---
 
 # Словарь: какое слово в заметке = какой препарат. Пишем маленькими буквами,

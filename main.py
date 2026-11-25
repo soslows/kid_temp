@@ -11,8 +11,11 @@ from logic import (
     format_datetime,
     format_temperature,
     med_status_text,
+    merge_records,
+    parse_csv,
     parse_temperature,
     record_datetime,
+    records_to_csv,
     replace_time,
     sort_records,
 )
@@ -69,7 +72,10 @@ def main(page: ft.Page):
     text_stats = ft.Text("", color=ft.Colors.GREY_700, size=16)
     text_med = ft.Text("", size=17, weight=ft.FontWeight.W_600)
     text_error = ft.Text("", color=ft.Colors.RED_600)
+    text_backup = ft.Text("", color=ft.Colors.GREY_700, size=14)
     records_column = ft.Column(spacing=6)
+    file_picker = ft.FilePicker()
+    page.services.append(file_picker)
 
     # --- действия ---
 
@@ -183,6 +189,47 @@ def main(page: ft.Page):
             )
         )
 
+    # --- копия записей: выгрузка в CSV и загрузка обратно ---
+
+    async def export_csv(e):
+        """Кнопка «Сохранить копию»: скачивает CSV-файл со всеми записями."""
+        records = await load_records(page, prefs)
+        if not records:
+            text_backup.value = "Сохранять нечего — записей нет."
+            page.update()
+            return
+        csv_bytes = records_to_csv(records).encode("utf-8")
+        file_name = "kid-temp-{}.csv".format(datetime.now().strftime("%Y-%m-%d"))
+        await file_picker.save_file(file_name=file_name, src_bytes=csv_bytes)
+        text_backup.value = "Копия сохранена ({} записей).".format(len(records))
+        page.update()
+
+    async def import_csv(e):
+        """Кнопка «Загрузить копию»: читает CSV и приливает записи к текущим."""
+        files = await file_picker.pick_files(
+            dialog_title="Выбери CSV-файл с копией",
+            allow_multiple=False,
+            with_data=True,
+        )
+        if not files:
+            return
+        try:
+            text = files[0].bytes.decode("utf-8-sig")
+        except (UnicodeDecodeError, AttributeError):
+            text_backup.value = "Не удалось прочитать файл — нужен CSV из этого приложения."
+            page.update()
+            return
+        incoming, skipped = parse_csv(text)
+        if not incoming:
+            text_backup.value = "В файле не нашлось ни одной правильной записи."
+            page.update()
+            return
+        records = await load_records(page, prefs)
+        merged, added = merge_records(records, incoming)
+        await save_records(page, prefs, merged)
+        text_backup.value = "Добавлено {}, пропущено {} (дубли или ошибки).".format(added, skipped)
+        await refresh()
+
     # --- правка записи: карандаш у записи открывает диалог с её полями ---
 
     field_edit_temp = ft.TextField(
@@ -244,6 +291,8 @@ def main(page: ft.Page):
 
     button_add = ft.Button("Добавить", on_click=lambda e: run(add, e))
     button_clear = ft.TextButton("Очистить всё", on_click=lambda e: run(ask_clear, e))
+    button_export = ft.TextButton("Сохранить копию", on_click=lambda e: run(export_csv, e))
+    button_import = ft.TextButton("Загрузить копию", on_click=lambda e: run(import_csv, e))
 
     # на телефоне: температура и время в строку, заметка на всю ширину, кнопка на всю ширину
     input_row = ft.ResponsiveRow(
@@ -263,7 +312,8 @@ def main(page: ft.Page):
         text_error,
         text_med,
         text_stats,
-        ft.Row([button_clear]),
+        ft.Row([button_clear, button_export, button_import], wrap=True, spacing=16),
+        text_backup,
         ft.Divider(),
         records_column,
     )
