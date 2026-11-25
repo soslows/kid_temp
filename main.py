@@ -33,6 +33,7 @@ from logic import (
     note_split,
     parse_csv,
     parse_temperature,
+    parse_time_hhmm,
     record_datetime,
     records_to_csv,
     replace_time,
@@ -205,7 +206,7 @@ def main(page: ft.Page):
         hint_text="например, нурофен 5 мл",
         **field_style(),
     )
-    text_error = ft.Text("", color=ERROR, size=14)
+    text_error = ft.Text("", color=ERROR, size=14, visible=False)
     text_backup = ft.Text("", color=TEXT2, size=14)
 
     field_edit_temp = ft.TextField(label="Температура, °C", keyboard_type=ft.KeyboardType.DATETIME, **field_style())
@@ -563,10 +564,12 @@ def main(page: ft.Page):
             ft.Column(
                 [
                     ft.Row([field_temp, field_time], spacing=10),
+                    # ошибка — сразу под полями ввода, а не внизу формы: иначе непонятно,
+                    # что именно исправлять (поле времени далеко вверху)
+                    text_error,
                     ft.Divider(height=1, color=DIVIDER),
                     chips_groups(state["form_symptoms"], toggle_form),
                     field_note,
-                    text_error,
                     ft.Button(
                         "Записать измерение",
                         on_click=lambda e: run(add, e),
@@ -711,12 +714,20 @@ def main(page: ft.Page):
         temp = parse_temperature(field_temp.value)
         if temp is None:
             text_error.value = "Введите число, например 36,6 (от 30 до 45)."
+            text_error.visible = True
             page.update()
             return
 
-        dt_str = record_datetime((field_time.value or "").strip(), datetime.now())
+        time_text = (field_time.value or "").strip()
+        now = datetime.now()
+        dt_str = record_datetime(time_text, now)
         if dt_str is None:
-            text_error.value = "Время — ЧЧ:ММ, например 15:40 (не в будущем)."
+            # два разных случая — и два разных текста: человек должен понять, что править
+            if parse_time_hhmm(time_text) is None:
+                text_error.value = "Время не понял: нужно 19:00 (можно 19.00)."
+            else:
+                text_error.value = "Это время ещё не наступило — сейчас {}.".format(now.strftime("%H:%M"))
+            text_error.visible = True
             page.update()
             return
 
@@ -728,6 +739,7 @@ def main(page: ft.Page):
         field_time.value = ""
         field_note.value = ""
         text_error.value = ""
+        text_error.visible = False
         state["form_symptoms"] = []
         state["tab"] = "home"  # после записи показываем главную: крупная температура и статус лекарств
         await refresh()
@@ -833,9 +845,15 @@ def main(page: ft.Page):
             text_edit_error.value = "Введите число, например 36,6 (от 30 до 45)."
             page.update()
             return
-        new_dt = replace_time(row["dt"], (field_edit_time.value or "").strip(), datetime.now())
+        edit_time_text = (field_edit_time.value or "").strip()
+        now = datetime.now()
+        new_dt = replace_time(row["dt"], edit_time_text, now)
         if new_dt is None:
-            text_edit_error.value = "Время — ЧЧ:ММ, например 15:40 (не в будущем)."
+            # пусто = «оставить как было», поэтому None — это либо непонятная запись, либо будущее
+            if parse_time_hhmm(edit_time_text) is None:
+                text_edit_error.value = "Время не понял: нужно 19:00 (можно 19.00)."
+            else:
+                text_edit_error.value = "Это время ещё не наступило — сейчас {}.".format(now.strftime("%H:%M"))
             page.update()
             return
 

@@ -1,6 +1,7 @@
 # logic.py — вычисления без интерфейса: разбор и форматирование температуры, статистика.
 # Этот файл ничего не знает про экран — поэтому его легко проверять тестами (test_logic.py).
 
+import re
 from datetime import datetime, timedelta
 
 
@@ -225,19 +226,39 @@ def _hours_text(hours):
 # --- Время записи: задним числом и правка ---
 
 def parse_time_hhmm(text):
-    """«17:30» или «9:05» -> «17:30», «09:05» (всегда ЧЧ:ММ с нулями — иначе сортировка строк ломается).
+    """«17:30», «9:05», «19.00», «19,00», «1900», «930» -> «ЧЧ:ММ» с нулями.
 
-    Ошибка -> None.
+    Разделитель может быть любой из трёх — «:», «.» или «,»: на Android и в браузере
+    клавиатура часто даёт только точку, и требовать двоеточие нельзя.
+    Слитная запись тоже понимается: «1900» -> «19:00», «930» -> «09:30»
+    (три цифры = Ч:ММ, четыре = ЧЧ:ММ; две цифры неоднозначны и не принимаются).
+
+    Всегда ЧЧ:ММ с нулями — иначе сортировка строк ломается. Ошибка -> None.
     """
     if not text:
         return None
-    parts = text.strip().split(":")
-    if len(parts) != 2:
+    cleaned = text.strip()
+    if not cleaned:
         return None
-    try:
-        hours, minutes = int(parts[0]), int(parts[1])
-    except ValueError:
+
+    hours_text = minutes_text = None
+    for separator in (":", ".", ","):
+        if separator in cleaned:
+            parts = cleaned.split(separator)
+            if len(parts) != 2:
+                return None
+            hours_text, minutes_text = parts[0].strip(), parts[1].strip()
+            break
+    else:
+        # без разделителя: только 3 или 4 цифры, иначе непонятно, где граница
+        if not re.fullmatch(r"[0-9]{3,4}", cleaned):
+            return None
+        split_at = len(cleaned) - 2
+        hours_text, minutes_text = cleaned[:split_at], cleaned[split_at:]
+
+    if not re.fullmatch(r"[0-9]{1,2}", hours_text) or not re.fullmatch(r"[0-9]{1,2}", minutes_text):
         return None
+    hours, minutes = int(hours_text), int(minutes_text)
     if not (0 <= hours <= 23 and 0 <= minutes <= 59):
         return None
     return "{:02d}:{:02d}".format(hours, minutes)
