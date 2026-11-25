@@ -2,3 +2,7 @@ __pycache__/
 *.pyc
 build/
 restore-*.csv
+# Логи прогонов сборки/тестов — не в репозиторий
+build_apk.log
+headless_*.log
+*.bak

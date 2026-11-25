@@ -868,6 +868,20 @@ def main(page: ft.Page):
             )
         return layers
 
+    # --- системная «назад» (Android) ---
+    # Корневое представление само не закрывается (can_pop=False): Flutter сначала
+    # спрашивает приложение, и только если мы разрешим — закрывает его.
+    # Поведение: с любой вкладки «назад» возвращает на «Главную», на «Главной» — выход.
+    async def confirm_back(e):
+        if state["tab"] == "home":
+            await e.control.confirm_pop(True)  # разрешаем: приложение закроется
+        else:
+            choose_tab("home")
+            await e.control.confirm_pop(False)  # отменяем выход, остаёмся в приложении
+
+    page.views[0].can_pop = False
+    page.views[0].on_confirm_pop = confirm_back
+
     page.add(ft.Stack(veil() + [ft.Column([body, nav_box], spacing=0, expand=True)], expand=True))
     run(refresh)
 
