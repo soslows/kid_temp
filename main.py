@@ -1,5 +1,6 @@
 # main.py — экран приложения «Дневник температуры ребёнка».
-# Запуск: python main.py
+# Дизайн v4 (гамма Lumi): кремовый фон, белые карточки, мягко-чёрная кнопка.
+# Старый интерфейс — в main_old_ui.py.bak. Запуск: python main.py   (веб: flet run --web)
 
 import json
 from datetime import datetime
@@ -23,6 +24,22 @@ from logic import (
 # Ключ, под которым записи лежат в локальном хранилище (SharedPreferences).
 STORAGE_KEY = "kidtemp_entries"
 
+# --- дизайн-токены (гамма Lumi, светлая тема) ---
+BG = "#F7F3EC"            # кремовый фон
+CARD = "#FFFFFF"
+TEXT = "#1D1A16"
+TEXT2 = "#5C564E"         # вторичный текст
+TEXT3 = "#8F877B"         # третичный текст
+INK = "#161412"           # мягко-чёрная кнопка
+ON_INK = "#FAF7F1"
+ACCENT = "#E8734A"        # тёплый акцент: рамка полей в фокусе
+OK = "#4E9E5F"
+OK_SURF = "#DFF0E0"
+WARN = "#B98A2E"
+WARN_SURF = "#F6ECCF"
+ERROR = "#C0554B"
+FIELD_BORDER = "#E3DCD1"
+
 
 async def load_records(page, prefs):
     """Читает записи из хранилища. Нет данных — пустой список."""
@@ -37,43 +54,80 @@ async def save_records(page, prefs, records):
     await prefs.set(STORAGE_KEY, json.dumps(records, ensure_ascii=False))
 
 
+def field_style(**kwargs):
+    """Общий вид полей ввода: белые, скруглённые, акцентная рамка в фокусе."""
+    base = dict(
+        filled=True,
+        fill_color=CARD,
+        border_radius=14,
+        border_color=FIELD_BORDER,
+        focused_border_color=ACCENT,
+        cursor_color=ACCENT,
+    )
+    base.update(kwargs)
+    return base
+
+
+def section_title(text):
+    """Тихий капс-заголовок секции."""
+    return ft.Container(
+        ft.Text(text.upper(), size=12, weight=ft.FontWeight.W_600, color=TEXT3),
+        padding=ft.Padding(6, 0, 0, 0),
+    )
+
+
+def card(rows):
+    """Белая карточка: скругление 20, мягкая тень."""
+    return ft.Container(
+        ft.Column(rows, spacing=0),
+        bgcolor=CARD,
+        border_radius=20,
+        padding=6,
+        shadow=ft.BoxShadow(blur_radius=14, color="#1412100D", offset=(0, 2)),
+    )
+
+
 def main(page: ft.Page):
     page.title = "Дневник температуры ребёнка"
-    page.padding = 20
-    # страница прокручивается, когда записей больше, чем влезает на экран
+    # гамма Lumi: крем с пастельными радиальными градиентами (лаванда/розовый/жёлтый по углам)
+    page.bgcolor = BG
+    page.decoration = ft.BoxDecoration(
+        gradient=ft.RadialGradient(
+            radius=1.2,
+            center=ft.Alignment(-0.7, -0.9),
+            colors=["#E6DEF4", "#F6DEE5", BG],
+            stops=[0.0, 0.4, 0.85],
+        )
+    )
+    page.padding = 16
     page.scroll = ft.ScrollMode.AUTO
 
     # Хранилище — это «сервис»: подключаем к странице, дальше читаем/пишем.
     prefs = ft.SharedPreferences()
     page.services.append(prefs)
 
-    # --- элементы интерфейса ---
+    # --- поля ввода ---
 
     field_temp = ft.TextField(
         label="Температура, °C",
         hint_text="например, 36,6",
-        width=170,
-        # Decimal: клавиатура с запятой (иначе на iPhone ввести «36,6» нельзя)
-        keyboard_type=ft.KeyboardType.DATETIME,
+        keyboard_type=ft.KeyboardType.DATETIME,  # клавиатура с запятой
+        **field_style(),
     )
     field_note = ft.TextField(
         label="Заметка (необязательно)",
         hint_text="например, после жаропонижающего",
-        expand=True,
-        expand_loose=True,
+        **field_style(),
     )
     field_time = ft.TextField(
         label="Время, ЧЧ:ММ (необязательно)",
-        hint_text="если время упущено — впиши, например 15:40",
-        width=170,
-        # DATETIME: на iPhone клавиатура с «:»
-        keyboard_type=ft.KeyboardType.DATETIME,
+        hint_text="если упущено — например, 15:40",
+        keyboard_type=ft.KeyboardType.DATETIME,  # на iPhone клавиатура с «:»
+        **field_style(),
     )
-    text_stats = ft.Text("", color=ft.Colors.GREY_700, size=16)
-    text_med = ft.Text("", size=17, weight=ft.FontWeight.W_600)
-    text_error = ft.Text("", color=ft.Colors.RED_600)
-    text_backup = ft.Text("", color=ft.Colors.GREY_700, size=14)
-    records_column = ft.Column(spacing=6)
+    text_error = ft.Text("", color=ERROR, size=14)
+    text_backup = ft.Text("", color=TEXT2, size=14)
+    text_stats = ft.Text("", color=TEXT2, size=14.5)
 
     def on_picker_result(e):
         """Результат ft.PickFiles (жест на кнопке — так требует iOS/Safari)."""
@@ -83,49 +137,127 @@ def main(page: ft.Page):
     file_picker = ft.FilePicker(on_result=on_picker_result)
     page.services.append(file_picker)
 
+    # --- секция «Лекарства» (мед-статус по обоим препаратам) ---
+
+    meds_card = ft.Container(visible=False)
+
+    def med_row(name, status, kind):
+        """Строка лекарства: капля-иконка на пастельном контейнере + статус справа."""
+        color = OK if kind == "ok" else WARN
+        surface = OK_SURF if kind == "ok" else WARN_SURF
+        return ft.Row(
+            [
+                ft.Container(
+                    ft.Icon(ft.Icons.WATER_DROP_OUTLINED, color=color, size=20),
+                    width=38,
+                    height=38,
+                    border_radius=12,
+                    bgcolor=surface,
+                    alignment=ft.alignment.center,
+                ),
+                ft.Column(
+                    [
+                        ft.Text(name, size=15.5, weight=ft.FontWeight.W_600, color=TEXT),
+                        ft.Text("по заметке за сегодня", size=12.5, color=TEXT2),
+                    ],
+                    spacing=2,
+                    expand=True,
+                ),
+                ft.Text(status, size=13.5, weight=ft.FontWeight.W_600, color=color,
+                        text_align=ft.TextAlign.RIGHT),
+            ]
+        )
+
+    def refresh_meds(records):
+        """Рисует блок лекарств из med_status_text (строки «Название: статус»)."""
+        status_text = med_status_text(records, datetime.now()) if records else ""
+        lines = [ln for ln in (status_text or "").splitlines() if ln.strip() and ":" in ln]
+        if not lines:
+            meds_card.visible = False
+            meds_card.content = None
+            return
+        rows = []
+        for i, ln in enumerate(lines):
+            name, rest = ln.split(":", 1)
+            rest = rest.strip()
+            kind = "ok" if "можно" in rest.lower() else "warn"
+            rows.append(ft.Container(med_row(name.strip(), rest, kind),
+                                     padding=ft.Padding(10, 12, 10, 12)))
+            if i < len(lines) - 1:
+                rows.append(ft.Divider(height=1, color=FIELD_BORDER))
+        meds_card.content = ft.Column(rows, spacing=0)
+        meds_card.visible = True
+
+    # --- секция «История» ---
+
+    history_card = ft.Container(visible=False)
+
+    def history_row(rec):
+        """Одна запись: температура + время/заметка + карандаш и корзина."""
+        return ft.Row(
+            [
+                ft.Column(
+                    [
+                        ft.Text(
+                            "{} °C".format(format_temperature(rec["t"])),
+                            size=15.5,
+                            weight=ft.FontWeight.W_600,
+                            color=TEXT,
+                        ),
+                        ft.Text(
+                            format_datetime(rec["dt"]) + (" · " + rec["note"] if rec["note"] else ""),
+                            size=12.5,
+                            color=TEXT2,
+                        ),
+                    ],
+                    spacing=2,
+                    expand=True,
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.EDIT_OUTLINED,
+                    tooltip="Править запись",
+                    icon_color=TEXT3,
+                    on_click=lambda e, r=rec: open_edit(r),
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.DELETE_OUTLINED,
+                    tooltip="Удалить запись",
+                    icon_color=TEXT3,
+                    on_click=lambda e, r=rec: run(delete, r),
+                ),
+            ]
+        )
+
+    def refresh_history(records):
+        rows = [history_row(r) for r in sort_records(records)]
+        if not rows:
+            history_card.visible = False
+            history_card.content = None
+            return
+        body = []
+        for i, row in enumerate(rows):
+            body.append(ft.Container(row, padding=ft.Padding(10, 8, 10, 8)))
+            if i < len(rows) - 1:
+                body.append(ft.Divider(height=1, color=FIELD_BORDER))
+        history_card.content = ft.Column(body, spacing=0)
+        history_card.visible = True
+
     # --- действия ---
 
     async def refresh():
-        """Перерисовывает список записей и строку статистики."""
+        """Перерисовывает блоки лекарств, истории и строку статистики."""
         records = sort_records(await load_records(page, prefs))
-
-        records_column.controls.clear()
-        for rec in records:
-            shown = "{} °C — {} ({})".format(
-                format_temperature(rec["t"]),
-                rec["note"] or "без заметки",
-                format_datetime(rec["dt"]),
-            )
-            records_column.controls.append(
-                ft.Row(
-                    controls=[
-                        ft.Text(shown, size=16, expand=True),
-                        ft.IconButton(
-                            icon=ft.Icons.EDIT_OUTLINE,
-                            tooltip="Править запись",
-                            on_click=lambda e, r=rec: open_edit(r),
-                        ),
-                        ft.IconButton(
-                            icon=ft.Icons.DELETE_OUTLINE,
-                            tooltip="Удалить запись",
-                            on_click=lambda e, r=rec: run(delete, r),
-                        ),
-                    ]
-                )
-            )
+        refresh_meds(records)
+        refresh_history(records)
 
         stats = compute_stats(records)
         if stats is None:
-            text_stats.value = "Пока нет измерений."
+            text_stats.value = "Пока нет измерений — запиши первое."
         else:
-            text_stats.value = "Измерений: {count}. Максимум: {max_t}. Последнее: {last_t} ({last_dt}).".format(
+            text_stats.value = "Измерений: {count} · максимум {max_t} °C".format(
                 count=stats["count"],
                 max_t=format_temperature(stats["max_t"]),
-                last_t=format_temperature(stats["last"]["t"]),
-                last_dt=format_datetime(stats["last"]["dt"]),
             )
-        # строка про жаропонижающее — над историей, всегда «свежая»
-        text_med.value = med_status_text(records, datetime.now())
         page.update()
 
     def run(coro_func, *args):
@@ -133,7 +265,7 @@ def main(page: ft.Page):
         page.run_task(coro_func, *args)
 
     async def add(e):
-        """Кнопка «Добавить»: проверяем температуру и сохраняем запись."""
+        """Кнопка «Записать»: проверяем температуру и сохраняем запись."""
         temp = parse_temperature(field_temp.value)
         if temp is None:
             text_error.value = "Введите число, например 36,6 (от 30 до 45)."
@@ -156,7 +288,6 @@ def main(page: ft.Page):
         )
         await save_records(page, prefs, records)
 
-        # очищаем поля и убираем прошлую ошибку
         field_temp.value = ""
         field_time.value = ""
         field_note.value = ""
@@ -231,19 +362,15 @@ def main(page: ft.Page):
 
     # --- правка записи: карандаш у записи открывает диалог с её полями ---
 
-    field_edit_temp = ft.TextField(
-        label="Температура, °C",
-        keyboard_type=ft.KeyboardType.DATETIME,
-        width=170,
-    )
+    field_edit_temp = ft.TextField(label="Температура, °C", keyboard_type=ft.KeyboardType.DATETIME, **field_style())
     field_edit_time = ft.TextField(
         label="Время, ЧЧ:ММ",
         hint_text="пусто = оставить как было",
         keyboard_type=ft.KeyboardType.DATETIME,
-        width=170,
+        **field_style(),
     )
-    field_edit_note = ft.TextField(label="Заметка", expand=True, expand_loose=True)
-    text_edit_error = ft.Text("", color=ft.Colors.RED_600)
+    field_edit_note = ft.TextField(label="Заметка", **field_style())
+    text_edit_error = ft.Text("", color=ERROR)
     editing_rec = None  # какую запись сейчас правим
 
     def open_edit(rec):
@@ -288,11 +415,26 @@ def main(page: ft.Page):
         close_dlg(e)
         await refresh()
 
-    button_add = ft.Button("Добавить", on_click=lambda e: run(add, e))
-    button_clear = ft.TextButton("Очистить всё", on_click=lambda e: run(ask_clear, e))
-    button_export = ft.TextButton("Сохранить копию", on_click=lambda e: run(export_csv, e))
+    # --- кнопки ---
+
+    button_add = ft.Button(
+        "Записать измерение",
+        on_click=lambda e: run(add, e),
+        style=ft.ButtonStyle(
+            shape=ft.RoundedRectangleBorder(radius=16),
+            bgcolor=INK,
+            color=ON_INK,
+            padding=ft.Padding(24, 18, 24, 18),
+            overlay_color="#FAF7F114",
+        ),
+    )
+    button_clear = ft.TextButton("Очистить всё", on_click=lambda e: run(ask_clear, e),
+                                 style=ft.ButtonStyle(color=TEXT2))
+    button_export = ft.TextButton("Сохранить копию", on_click=lambda e: run(export_csv, e),
+                                  style=ft.ButtonStyle(color=TEXT2))
     button_import = ft.TextButton(
         "Загрузить копию",
+        style=ft.ButtonStyle(color=TEXT2),
         # action (а не on_click): диалог открывает сам браузер внутри жеста —
         # иначе iOS/Safari блокирует выбор файла («кнопка не тыкается»)
         action=ft.PickFiles(
@@ -303,28 +445,40 @@ def main(page: ft.Page):
         ),
     )
 
-    # на телефоне: температура и время в строку, заметка на всю ширину, кнопка на всю ширину
-    input_row = ft.ResponsiveRow(
+    # --- сборка экрана ---
+
+    input_card = card(
         [
-            ft.Container(field_temp, col={"xs": 5}),
-            ft.Container(field_time, col={"xs": 7}),
-            ft.Container(field_note, col={"xs": 12}),
-            ft.Container(button_add, col={"xs": 12}),
-        ],
-        spacing=10,
-        vertical_alignment=ft.CrossAxisAlignment.END,
+            ft.Container(
+                ft.Column(
+                    [
+                        ft.Row([field_temp, field_time], spacing=10),
+                        field_note,
+                        text_error,
+                        button_add,
+                    ],
+                    spacing=10,
+                ),
+                padding=10,
+            ),
+        ]
     )
 
+    backup_row = ft.Row([button_clear, button_export, button_import], wrap=True, spacing=4)
+
     page.add(
-        ft.Text("Дневник температуры ребёнка", size=24, weight=ft.FontWeight.BOLD),
-        input_row,
-        text_error,
-        text_med,
-        text_stats,
-        ft.Row([button_clear, button_export, button_import], wrap=True, spacing=16),
-        text_backup,
-        ft.Divider(),
-        records_column,
+        ft.Column(
+            [
+                ft.Text("Дневник температуры", size=22, weight=ft.FontWeight.W_700, color=TEXT),
+                input_card,
+                ft.Column([section_title("Лекарства"), meds_card], spacing=6),
+                ft.Column([section_title("История"), history_card], spacing=6),
+                text_stats,
+                backup_row,
+                text_backup,
+            ],
+            spacing=16,
+        )
     )
     run(refresh)
 
