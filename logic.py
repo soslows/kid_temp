@@ -163,6 +163,11 @@ MED_GENITIVE = {
     "нурофен": "нурофена",
     "парацетамол": "парацетамола",
 }
+# Творительный падеж для фраз вида «перекрёстный интервал с нурофеном».
+MED_INSTRUMENTAL = {
+    "нурофен": "нурофеном",
+    "парацетамол": "парацетамолом",
+}
 
 
 def detect_meds(note_text):
@@ -188,11 +193,9 @@ def find_last_med(records):
     return None
 
 
-def format_elapsed_since(dt_text, now):
-    """«Сколько прошло» человеческим языком: «5 ч 30 мин», «2 ч», «40 мин»."""
-    then = datetime.strptime(dt_text, "%Y-%m-%d %H:%M")
-    minutes = int((now - then).total_seconds() // 60)
-    if minutes < 0:
+def _minutes_text(minutes):
+    """114 -> «1 ч 54 мин», 120 -> «2 ч», 40 -> «40 мин», 0 -> «0 мин»."""
+    if minutes <= 0:
         return "0 мин"
     hours = minutes // 60
     rest = minutes % 60
@@ -201,6 +204,15 @@ def format_elapsed_since(dt_text, now):
     if rest == 0:
         return "{} ч".format(hours)
     return "{} ч {} мин".format(hours, rest)
+
+
+def format_elapsed_since(dt_text, now):
+    """«Сколько прошло» человеческим языком: «5 ч 30 мин», «2 ч», «40 мин»."""
+    then = datetime.strptime(dt_text, "%Y-%m-%d %H:%M")
+    minutes = int((now - then).total_seconds() // 60)
+    if minutes < 0:
+        return "0 мин"
+    return _minutes_text(minutes)
 
 
 def _hours_text(hours):
@@ -450,8 +462,9 @@ def med_cards(records, now):
     """Карточки лекарств для главной: по одной на препарат (как в макете v4).
 
     Поля: name, given_at («19:40» или None, если ещё не давали), elapsed («2 ч 20 мин»),
-    status («можно с 21:40» / «ещё 3,7 ч»), ok (можно ли давать прямо сейчас),
-    allowed_at («21:40»). Интервалы — те же, что в med_status_lines.
+    status («уже можно» / «нельзя ещё 3 ч 54 мин», при перекрёстном интервале —
+    с названием препарата), ok (можно ли давать прямо сейчас), allowed_at («21:40»).
+    Интервалы — те же, что в med_status_lines.
     """
     if not records:
         return []
@@ -467,18 +480,23 @@ def med_cards(records, now):
     for med, dt_text in sorted(last_by_med.items(), key=lambda item: item[1], reverse=True):
         then = datetime.strptime(dt_text, "%Y-%m-%d %H:%M")
         allowed = then + timedelta(hours=MIN_INTERVAL_HOURS[med])
+        cross_other = None
         for other, other_dt in last_by_med.items():
             if other == med:
                 continue
             cross = datetime.strptime(other_dt, "%Y-%m-%d %H:%M") + timedelta(hours=CROSS_INTERVAL_HOURS)
             if cross > allowed:
                 allowed = cross
+                cross_other = other
         ok = now >= allowed
         if ok:
-            status = "можно с {}".format(allowed.strftime("%H:%M"))
+            status = "уже можно"
         else:
-            left = (allowed - now).total_seconds() / 3600.0
-            status = "ещё {} ч".format(_hours_text(round(left, 1)))
+            left = int((allowed - now).total_seconds() // 60)
+            status = "нельзя ещё {}".format(_minutes_text(left))
+            if cross_other:
+                status += " (перекрёстный интервал с {})".format(
+                    MED_INSTRUMENTAL.get(cross_other, cross_other))
         cards.append({
             "name": med,
             "given_at": dt_text[11:16],
