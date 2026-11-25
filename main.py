@@ -74,6 +74,12 @@ def main(page: ft.Page):
     text_error = ft.Text("", color=ft.Colors.RED_600)
     text_backup = ft.Text("", color=ft.Colors.GREY_700, size=14)
     records_column = ft.Column(spacing=6)
+
+    def on_picker_result(e):
+        """Результат ft.PickFiles (жест на кнопке — так требует iOS/Safari)."""
+        if e.files:
+            run(_apply_import, e.files)
+
     file_picker = ft.FilePicker(on_result=on_picker_result)
     page.services.append(file_picker)
 
@@ -204,17 +210,6 @@ def main(page: ft.Page):
         text_backup.value = "Копия сохранена ({} записей).".format(len(records))
         page.update()
 
-    async def import_csv(e):
-        """Кнопка «Загрузить копию»: читает CSV и приливает записи к текущим."""
-        files = await file_picker.pick_files(
-            dialog_title="Выбери CSV-файл с копией",
-            allow_multiple=False,
-            with_data=True,
-        )
-        if not files:
-            return
-        await _apply_import(files)
-
     async def _apply_import(files):
         """Разбирает выбранный CSV и добавляет записи (общая часть для кнопки и жеста)."""
         try:
@@ -233,11 +228,6 @@ def main(page: ft.Page):
         await save_records(page, prefs, merged)
         text_backup.value = "Добавлено {}, пропущено {} (дубли или ошибки).".format(added, skipped)
         await refresh()
-
-    def on_picker_result(e):
-        """Результат ft.PickFiles (жест на кнопке — так требует iOS/Safari)."""
-        if e.files:
-            run(_apply_import, e.files)
 
     # --- правка записи: карандаш у записи открывает диалог с её полями ---
 
