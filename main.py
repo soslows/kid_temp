@@ -426,7 +426,7 @@ def main(page: ft.Page):
                         icon=ft.Icons.DELETE_OUTLINED,
                         tooltip="Удалить запись",
                         icon_color=TEXT3,
-                        on_click=lambda e, r=row: run(delete, r),
+                        on_click=lambda e, r=row: ask_delete(r),
                     )
                 )
             controls.append(
@@ -674,7 +674,8 @@ def main(page: ft.Page):
         await refresh()
 
     async def delete(rec):
-        """Удаляет одну запись (по кнопке-корзине)."""
+        """Удаляет одну запись — ровно одну, и только после подтверждения в диалоге."""
+        page.pop_dialog()
         records = await load_records()
         for index, item in enumerate(records):
             if item["dt"] == rec["dt"] and abs(item["t"] - rec["t"]) < 1e-9:
@@ -682,6 +683,22 @@ def main(page: ft.Page):
                 break
         await save_records(records)
         await refresh()
+
+    def ask_delete(row):
+        """Подтверждение удаления одной записи — по образцу «Очистить всё».
+
+        «Отмена» и системная «назад» просто закрывают диалог, ничего не меняя.
+        """
+        page.show_dialog(
+            ft.AlertDialog(
+                title=ft.Text("Удалить измерение?"),
+                content=ft.Text("{} °C · {}".format(format_temperature(row["t"]), row["time"])),
+                actions=[
+                    ft.TextButton("Отмена", on_click=close_dlg),
+                    ft.TextButton("Удалить", on_click=lambda ev, r=row: run(delete, r)),
+                ],
+            )
+        )
 
     def close_dlg(e):
         page.pop_dialog()
