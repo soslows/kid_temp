@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kid-temp — главный экран v2 (mobile-design skill)</title>
+<style>
+  /* mobile-design skill: системный шрифт платформы, один акцент, opacity-рампа текста,
+     списки с разделителями вместо карточек, сетка 4/8/12/16/24, табличные цифры */
+  :root{
+    --bg:#121212;            /* off-black, не #000 */
+    --surface:#1C1B18;       /* тонируемый нейтральный, тёплый подтон */
+    --surface-2:#282520;
+    --text:#F2EFEB;          /* P */
+    --text-2:rgba(242,239,235,.64);  /* S */
+    --text-3:rgba(242,239,235,.42);  /* T */
+    --accent:#FF6B3D;
+    --on-accent:#221007;
+    --ok:#7FC96B; --warn:#E8B84E;
+    --divider:rgba(242,239,235,.08);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  ::selection{background:var(--accent);color:var(--on-accent)}
+  body{background:#0A0A0A;font-family:Roboto,system-ui,'Segoe UI',sans-serif;color:var(--text);
+       display:flex;justify-content:center;padding:24px 12px;min-height:100vh}
+  .screen{width:390px;max-width:100%;background:var(--bg);min-height:820px;border-radius:28px;
+          border:1px solid var(--divider);display:flex;flex-direction:column;overflow:hidden}
+  .scroll{flex:1;padding:0 16px 96px}
+
+  /* top app bar */
+  .bar{display:flex;align-items:center;gap:12px;padding:18px 16px 10px}
+  .bar .title{font-size:15px;font-weight:500;color:var(--text-2);flex:1}
+  .bar .icon{width:44px;height:44px;border-radius:50%;border:none;background:transparent;color:var(--text-2);
+             display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .bar .icon:hover{background:var(--surface-2)}
+  .bar .icon:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* герой: один главный элемент, слева, табличные цифры */
+  .hero{padding:8px 16px 20px}
+  .temp{font-size:76px;font-weight:600;line-height:1.05;letter-spacing:-0.01em;
+        font-variant-numeric:tabular-nums}
+  .temp .unit{font-size:34px;font-weight:400;color:var(--text-2)}
+  .temp-meta{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:14px;color:var(--text-2)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+  .trend{color:var(--ok);font-weight:500;font-variant-numeric:tabular-nums}
+  .sep{color:var(--text-3)}
+
+  /* секции: заголовок T-маленький, список с разделителями */
+  h2{font-size:13px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;
+     color:var(--text-3);margin:20px 0 4px;padding:0 16px 0 0}
+  .list{background:var(--surface);border-radius:16px;overflow:hidden}
+  .row{display:flex;align-items:center;gap:14px;padding:14px 16px;min-height:56px}
+  .row + .row{border-top:1px solid var(--divider)}
+  .row .grow{flex:1;min-width:0}
+  .row .name{font-size:15.5px;font-weight:500}
+  .row .sub{font-size:13px;color:var(--text-2);margin-top:2px;font-variant-numeric:tabular-nums}
+  .row .status{font-size:13.5px;font-weight:500;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .row .status.ok{color:var(--ok)}
+  .row .status.warn{color:var(--warn)}
+  .row .led{flex:none;width:10px;height:10px;border-radius:50%}
+  .led.ok{background:var(--ok)}
+  .led.warn{background:var(--warn)}
+
+  /* симптомы: нативные filter-chips */
+  .chips{display:flex;flex-wrap:wrap;gap:8px;padding-top:6px}
+  .chip{border:1px solid var(--divider);background:transparent;color:var(--text-2);
+        border-radius:10px;padding:0 16px;height:40px;font-size:14px;font-family:inherit;font-weight:500;cursor:pointer}
+  .chip[aria-pressed="true"]{background:var(--surface-2);border-color:transparent;color:var(--text)}
+  .chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* нижняя панель: одна primary-механика на экран, под большой палец */
+  .bottom{position:absolute;left:0;right:0;bottom:0;padding:12px 16px 20px;
+          background:linear-gradient(to top,var(--bg) 70%,transparent)}
+  .fab{width:100%;height:52px;border:none;border-radius:16px;background:var(--accent);color:var(--on-accent);
+       font-family:inherit;font-size:15.5px;font-weight:600;cursor:pointer;
+       display:flex;align-items:center;justify-content:center;gap:8px}
+  .fab:active{filter:brightness(.94)}
+  .fab:focus-visible{outline:3px solid var(--text);outline-offset:2px}
+  .screen{position:relative}
+  .safe{height:4px;display:flex;justify-content:center}
+  .safe i{width:120px;height:4px;border-radius:2px;background:rgba(242,239,235,.24)}
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="bar">
+    <span class="title">Сегодня, 25 ноября</span>
+    <button class="icon" aria-label="Настройки">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.4 2.6a7 7 0 0 0-2 1.2l-2.5-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.4-2.6a7 7 0 0 0 2-1.2l2.5 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z"/></svg>
+    </button>
+  </div>
+
+  <div class="scroll">
+    <div class="hero">
+      <div class="temp">38,6<span class="unit"> °C</span></div>
+      <div class="temp-meta">
+        <span>21:40</span><span class="sep">·</span>
+        <span class="dot" aria-hidden="true"></span>
+        <span class="trend">−0,4 за 4 ч</span><span class="sep">·</span>
+        <span>идёт вниз</span>
+      </div>
+    </div>
+
+    <h2>Лекарства</h2>
+    <div class="list">
+      <div class="row">
+        <span class="led ok" aria-hidden="true"></span>
+        <div class="grow"><div class="name">Нурофен</div><div class="sub">дали в 19:40 · прошло 2 ч</div></div>
+        <span class="status ok">можно с 23:40</span>
+      </div>
+      <div class="row">
+        <span class="led warn" aria-hidden="true"></span>
+        <div class="grow"><div class="name">Парацетамол</div><div class="sub">дали в 20:10 · прошло 1,5 ч</div></div>
+        <span class="status warn">ещё 2,5 ч</span>
+      </div>
+    </div>
+
+    <h2>Как ведёт себя</h2>
+    <div class="chips">
+      <button class="chip" aria-pressed="true">вялость</button>
+      <button class="chip" aria-pressed="false">насморк</button>
+      <button class="chip" aria-pressed="true">спит</button>
+      <button class="chip" aria-pressed="false">кашель</button>
+      <button class="chip" aria-pressed="false">не ест</button>
+      <button class="chip" aria-pressed="false">рвота</button>
+    </div>
+
+    <h2>Последние измерения</h2>
+    <div class="list">
+      <div class="row">
+        <div class="grow"><div class="name">38,6 °C</div><div class="sub">21:40 · нурофен 5 мл</div></div>
+      </div>
+      <div class="row">
+        <div class="grow"><div class="name">39,0 °C</div><div class="sub">17:30</div></div>
+      </div>
+      <div class="row">
+        <div class="grow"><div class="name">38,2 °C</div><div class="sub">14:05 · парацетамол 250 мг</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <button class="fab">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      Записать измерение
+    </button>
+    <div class="safe"><i></i></div>
+  </div>
+</div>
+</body>
+</html>
