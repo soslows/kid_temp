@@ -538,7 +538,7 @@ def main(page: ft.Page):
             section(
                 "История",
                 [
-                    history_list(history_rows(records, limit=2)),
+                    history_list(history_rows(records, limit=2), with_actions=True),
                     ft.Container(
                         ft.Text("Вся история за сутки →", size=14, color=TEXT2, text_align=ft.TextAlign.CENTER),
                         padding=ft.Padding(8, 12, 8, 4),
