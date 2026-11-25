@@ -74,7 +74,7 @@ def main(page: ft.Page):
     text_error = ft.Text("", color=ft.Colors.RED_600)
     text_backup = ft.Text("", color=ft.Colors.GREY_700, size=14)
     records_column = ft.Column(spacing=6)
-    file_picker = ft.FilePicker()
+    file_picker = ft.FilePicker(on_result=on_picker_result)
     page.services.append(file_picker)
 
     # --- действия ---
@@ -213,6 +213,10 @@ def main(page: ft.Page):
         )
         if not files:
             return
+        await _apply_import(files)
+
+    async def _apply_import(files):
+        """Разбирает выбранный CSV и добавляет записи (общая часть для кнопки и жеста)."""
         try:
             text = files[0].bytes.decode("utf-8-sig")
         except (UnicodeDecodeError, AttributeError):
@@ -229,6 +233,11 @@ def main(page: ft.Page):
         await save_records(page, prefs, merged)
         text_backup.value = "Добавлено {}, пропущено {} (дубли или ошибки).".format(added, skipped)
         await refresh()
+
+    def on_picker_result(e):
+        """Результат ft.PickFiles (жест на кнопке — так требует iOS/Safari)."""
+        if e.files:
+            run(_apply_import, e.files)
 
     # --- правка записи: карандаш у записи открывает диалог с её полями ---
 
@@ -292,7 +301,17 @@ def main(page: ft.Page):
     button_add = ft.Button("Добавить", on_click=lambda e: run(add, e))
     button_clear = ft.TextButton("Очистить всё", on_click=lambda e: run(ask_clear, e))
     button_export = ft.TextButton("Сохранить копию", on_click=lambda e: run(export_csv, e))
-    button_import = ft.TextButton("Загрузить копию", on_click=lambda e: run(import_csv, e))
+    button_import = ft.TextButton(
+        "Загрузить копию",
+        # action (а не on_click): диалог открывает сам браузер внутри жеста —
+        # иначе iOS/Safari блокирует выбор файла («кнопка не тыкается»)
+        action=ft.PickFiles(
+            file_picker,
+            dialog_title="Выбери CSV-файл с копией",
+            allow_multiple=False,
+            with_data=True,
+        ),
+    )
 
     # на телефоне: температура и время в строку, заметка на всю ширину, кнопка на всю ширину
     input_row = ft.ResponsiveRow(
