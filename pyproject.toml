@@ -1,6 +1,6 @@
 [project]
 name = "kid-temp"
-version = "0.1.1"
+version = "0.2.0"
 description = "Дневник температуры ребёнка: измерения, график, симптомы, лекарства. Данные хранятся только на устройстве."
 requires-python = ">=3.10"
 dependencies = ["flet==1.1.3"]
@@ -15,7 +15,7 @@ product = "Дневник температуры"
 company = "soslows"
 copyright = "Copyright (c) 2026 soslows"
 # version_code для Android: каждая новая сборка в магазин должна быть больше
-build_number = 2
+build_number = 3
 
 [tool.flet.app]
 # Не тащим в APK рабочий мусор репозитория (логи прогонов, старый интерфейс,
