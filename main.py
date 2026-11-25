@@ -211,7 +211,7 @@ def main(page: ft.Page):
 
     field_edit_temp = ft.TextField(label="Температура, °C", keyboard_type=ft.KeyboardType.DATETIME, **field_style())
     field_edit_time = ft.TextField(
-        label="Время, ЧЧ:ММ",
+        label="Время, например 19:00",
         hint_text="пусто = оставить как было",
         keyboard_type=ft.KeyboardType.DATETIME,
         **field_style(),
