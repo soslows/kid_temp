@@ -21,9 +21,7 @@ build_number = 4
 # Не тащим в APK рабочий мусор репозитория (логи прогонов, старый интерфейс,
 # макеты, тесты): у тестировщика внутри сборки должен быть только рабочий код.
 exclude = [
-    "build_apk.log",
-    "headless_final.log",
-    "headless_test.log",
+    "*.log",
     "main_old_ui.py.bak",
     "mockup",
     "restore-2026-11-23.csv",

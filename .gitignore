@@ -3,6 +3,6 @@ __pycache__/
 build/
 restore-*.csv
 # Логи прогонов сборки/тестов — не в репозиторий
-build_apk.log
+build_apk*.log
 headless_*.log
 *.bak
