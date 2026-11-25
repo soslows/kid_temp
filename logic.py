@@ -339,3 +339,223 @@ def _line_not_given(med, last_by_med, now):
 def med_status_text(records, now):
     """Готовый текст над историей: строки через перенос. Пусто — если лекарств нет."""
     return "\n".join(med_status_lines(records, now))
+
+
+# --- Дашборд v4 (макет mockup/main-screen-v4.html): шапка, герой, карточки, плиточки, график ---
+# Эти функции отдают интерфейсу уже готовые строки и числа — сам экран только рисует.
+
+MONTHS_GENITIVE = [
+    "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+]
+WEEKDAYS = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
+
+# Плиточки «Как ведёт себя» — порядок как в макете v4.
+SYMPTOMS = ["вялость", "насморк", "спит", "кашель", "не ест", "рвота"]
+
+
+def date_header(now):
+    """«Вторник, 25 ноября» — дата в шапке экрана."""
+    return "{}, {} {}".format(WEEKDAYS[now.weekday()], now.day, MONTHS_GENITIVE[now.month - 1])
+
+
+def latest_record(records):
+    """Самое свежее измерение (для крупной температуры на главной). Нет записей — None."""
+    ordered = sort_records(records)
+    return ordered[0] if ordered else None
+
+
+def temp_trend(records):
+    """Насколько и за сколько часов изменилась температура к последнему измерению.
+
+    Сравниваем последнее измерение с предыдущим. Возвращает (delta, hours) или None,
+    если измерений меньше двух. Часы — целые, минимум 1 (иначе выходило «за 0 ч»).
+    """
+    ordered = sort_records(records)
+    if len(ordered) < 2:
+        return None
+    last, prev = ordered[0], ordered[1]
+    delta = last["t"] - prev["t"]
+    span = datetime.strptime(last["dt"], "%Y-%m-%d %H:%M") - datetime.strptime(prev["dt"], "%Y-%m-%d %H:%M")
+    hours = int(span.total_seconds() / 3600.0 + 0.5)
+    return delta, max(1, hours)
+
+
+def trend_text(trend):
+    """(delta, hours) -> «−0,4 за 4 ч». Знак «минус» — типографский, как в макете."""
+    if trend is None:
+        return None
+    delta, hours = trend
+    if abs(delta) < 0.05:
+        return "без изменений за {} ч".format(hours)
+    sign = "−" if delta < 0 else "+"
+    return "{}{} за {} ч".format(sign, format_temperature(abs(delta)), hours)
+
+
+def symptoms_in_note(note_text):
+    """Какие плиточки отмечены в заметке: «нурофен, спит» -> ['спит']."""
+    if not note_text:
+        return []
+    text = note_text.lower()
+    return [word for word in SYMPTOMS if word in text]
+
+
+def _drop_word(text, word):
+    """Вырезает все вхождения слова (без учёта регистра)."""
+    lowered = text.lower()
+    while True:
+        index = lowered.find(word)
+        if index == -1:
+            return text
+        text = text[:index] + text[index + len(word):]
+        lowered = text.lower()
+
+
+def note_split(note_text):
+    """Заметка -> (свободный текст, отмеченные плиточки).
+
+    Слова-плиточки живут отдельно от текста, поэтому убираем их из текста
+    и чистим оставшиеся запятые — чтобы правка записи показывала то же, что макет.
+    """
+    text = note_text or ""
+    chosen = symptoms_in_note(text)
+    rest = text
+    for word in SYMPTOMS:
+        rest = _drop_word(rest, word)
+    parts = [part.strip(" ,.;\t") for part in rest.replace(";", ",").split(",")]
+    return ", ".join(part for part in parts if part), chosen
+
+
+def note_join(free_text, symptoms):
+    """Свободный текст + выбранные плиточки -> текст заметки для сохранения.
+
+    Слово, которое уже есть в тексте, второй раз не дописываем («вялость утром»
+    + плиточка «вялость» остаётся одной фразой).
+    """
+    base = (free_text or "").strip(" ,;")
+    chosen = [word for word in SYMPTOMS if word in set(symptoms or [])]
+    missing = [word for word in chosen if word not in base.lower()]
+    if not missing:
+        return base
+    if not base:
+        return ", ".join(missing)
+    return base + ", " + ", ".join(missing)
+
+
+def med_cards(records, now):
+    """Карточки лекарств для главной: по одной на препарат (как в макете v4).
+
+    Поля: name, given_at («19:40» или None, если ещё не давали), elapsed («2 ч 20 мин»),
+    status («можно с 21:40» / «ещё 3,7 ч»), ok (можно ли давать прямо сейчас),
+    allowed_at («21:40»). Интервалы — те же, что в med_status_lines.
+    """
+    if not records:
+        return []
+    last_by_med = {}
+    for rec in sort_records(records):
+        med = detect_meds(rec.get("note", ""))
+        if med and med not in last_by_med:
+            last_by_med[med] = rec["dt"]
+    if not last_by_med:
+        return []
+
+    cards = []
+    for med, dt_text in sorted(last_by_med.items(), key=lambda item: item[1], reverse=True):
+        then = datetime.strptime(dt_text, "%Y-%m-%d %H:%M")
+        allowed = then + timedelta(hours=MIN_INTERVAL_HOURS[med])
+        for other, other_dt in last_by_med.items():
+            if other == med:
+                continue
+            cross = datetime.strptime(other_dt, "%Y-%m-%d %H:%M") + timedelta(hours=CROSS_INTERVAL_HOURS)
+            if cross > allowed:
+                allowed = cross
+        ok = now >= allowed
+        if ok:
+            status = "можно с {}".format(allowed.strftime("%H:%M"))
+        else:
+            left = (allowed - now).total_seconds() / 3600.0
+            status = "ещё {} ч".format(_hours_text(round(left, 1)))
+        cards.append({
+            "name": med,
+            "given_at": dt_text[11:16],
+            "elapsed": format_elapsed_since(dt_text, now),
+            "status": status,
+            "ok": ok,
+            "allowed_at": allowed.strftime("%H:%M"),
+        })
+    # препараты, которых ещё не давали: подсказка, когда можно начать
+    for med in MIN_INTERVAL_HOURS:
+        if med in last_by_med:
+            continue
+        other_med, other_dt = max(last_by_med.items(), key=lambda item: item[1])
+        allowed = datetime.strptime(other_dt, "%Y-%m-%d %H:%M") + timedelta(hours=CROSS_INTERVAL_HOURS)
+        ok = now >= allowed
+        cards.append({
+            "name": med,
+            "given_at": None,
+            "elapsed": None,
+            "status": "можно с {}".format(allowed.strftime("%H:%M")) if not ok else "уже можно",
+            "ok": ok,
+            "allowed_at": allowed.strftime("%H:%M"),
+        })
+    return cards
+
+
+def history_rows(records, limit=None):
+    """Строки блока «История»: свежие сверху, с дельтой к предыдущему измерению.
+
+    Каждая строка: dt, time («21:40»), t, note (текст без слов-плиточек), symptoms,
+    med (препарат из заметки или None), delta_text («−0,4 с 17:30» или None).
+    """
+    ordered = sort_records(records)
+    rows = []
+    for index, rec in enumerate(ordered):
+        note_free, symptoms = note_split(rec.get("note", ""))
+        delta_text = None
+        if index + 1 < len(ordered):
+            prev = ordered[index + 1]
+            delta = rec["t"] - prev["t"]
+            if abs(delta) >= 0.05:
+                sign = "−" if delta < 0 else "+"
+                delta_text = "{}{} с {}".format(sign, format_temperature(abs(delta)), prev["dt"][11:16])
+        rows.append({
+            "dt": rec["dt"],
+            "time": rec["dt"][11:16],
+            "t": rec["t"],
+            "note": note_free,
+            "symptoms": symptoms,
+            "med": detect_meds(rec.get("note", "")),
+            "delta_text": delta_text,
+        })
+    if limit:
+        rows = rows[:limit]
+    return rows
+
+
+def chart_bars(records, now, hours=24, max_bars=8):
+    """Столбики для вкладки «График»: температура за последние `hours` часов.
+
+    Возвращает (bars, info). bars: time («21:40»), t, height (0..1 — доля высоты).
+    info: count (сколько измерений за сутки), max_t, min_t — или None, если данных нет.
+    """
+    if not records:
+        return [], None
+    border = now - timedelta(hours=hours)
+    fresh = [rec for rec in records if datetime.strptime(rec["dt"], "%Y-%m-%d %H:%M") >= border]
+    if not fresh:
+        return [], None
+    fresh.sort(key=lambda rec: rec["dt"])
+    if len(fresh) > max_bars:  # прореживаем, чтобы столбики не слиплись
+        step = len(fresh) / float(max_bars)
+        fresh = [fresh[int(index * step)] for index in range(max_bars)]
+
+    temps = [rec["t"] for rec in fresh]
+    low, high = min(temps), max(temps)
+    base = low - 0.3          # нижняя граница шкалы с запасом: 36,6 не должен быть точкой
+    top = max(high + 0.1, base + 0.5)
+    bars = [{
+        "time": rec["dt"][11:16],
+        "t": rec["t"],
+        "height": (rec["t"] - base) / (top - base),
+    } for rec in fresh]
+    return bars, {"count": len(fresh), "max_t": high, "min_t": low}

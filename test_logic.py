@@ -175,5 +175,73 @@ merged, added = merge_records(
 check("слияние: та же дата+температура = дубль, заметка не трогается",
       added == 2 and merged[0]["note"] == "другая заметка")
 
+# --- дашборд v4: шапка, тренд, плиточки, карточки лекарств, история, график ---
+from datetime import datetime
+
+from logic import (
+    SYMPTOMS, chart_bars, date_header, history_rows, latest_record,
+    med_cards, note_join, note_split, symptoms_in_note, temp_trend, trend_text,
+)
+
+now = datetime(2026, 11, 25, 22, 0)
+check("шапка: «Вторник, 24 ноября» (24.11 — вторник)",
+      date_header(datetime(2026, 11, 24)) == "Вторник, 24 ноября")
+check("шапка: 25.11.2026 — среда", date_header(now) == "Среда, 25 ноября")
+
+dash = [
+    {"dt": "2026-11-25 21:40", "t": 38.6, "note": "вялость, спит"},
+    {"dt": "2026-11-25 19:40", "t": 39.0, "note": "нурофен 5 мл"},
+    {"dt": "2026-11-25 17:30", "t": 39.0, "note": "парацетамол 250 мг"},
+]
+check("последнее измерение — 21:40", latest_record(dash)["dt"] == "2026-11-25 21:40")
+check("нет записей -> последнего нет", latest_record([]) is None)
+
+delta, hours = temp_trend(dash)
+check("тренд: −0,4 за 2 ч", abs(delta + 0.4) < 1e-9 and hours == 2)
+check("тренд текстом: «−0,4 за 2 ч»", trend_text((delta, hours)) == "−0,4 за 2 ч")
+check("тренд: рост со знаком +", trend_text((0.3, 2)) == "+0,3 за 2 ч")
+check("тренд: без изменений", trend_text((0.0, 4)) == "без изменений за 4 ч")
+check("тренд: одной записи мало -> None", temp_trend(dash[:1]) is None)
+check("тренд: None -> None текстом", trend_text(None) is None)
+
+check("плиточки из заметки", symptoms_in_note("нурофен 5 мл, вялость, спит") == ["вялость", "спит"])
+check("разбор заметки: текст отдельно",
+      note_split("нурофен 5 мл, вялость, спит") == ("нурофен 5 мл", ["вялость", "спит"]))
+check("сборка заметки обратно", note_join("нурофен 5 мл", ["вялость", "спит"]) == "нурофен 5 мл, вялость, спит")
+check("заметка без текста — только плиточки", note_join("", ["рвота"]) == "рвота")
+check("плиточки по порядку макета", note_join("", ["спит", "вялость"]) == "вялость, спит")
+check("плиточки не задваиваются в тексте", note_join("вялость утром", ["вялость"]) == "вялость утром")
+check("плиточки: список из макета", SYMPTOMS == ["вялость", "насморк", "спит", "кашель", "не ест", "рвота"])
+
+cards = med_cards(dash, now)
+check("карточки: два препарата, свежий сверху", [c["name"] for c in cards] == ["нурофен", "парацетамол"])
+check("нурофен: дали в 19:40, прошло 2 ч 20 мин",
+      cards[0]["given_at"] == "19:40" and cards[0]["elapsed"] == "2 ч 20 мин")
+check("нурофен: запрет до 01:40 (6 ч)", cards[0]["ok"] is False and cards[0]["status"] == "ещё 3,7 ч")
+check("парацетамол: можно (чередование с 21:40)",
+      cards[1]["ok"] is True and cards[1]["status"] == "можно с 21:40")
+one_med = med_cards([{"dt": "2026-11-25 21:40", "t": 38.0, "note": "нурофен 5 мл"}], now)
+check("препарат, которого не давали — карточка-подсказка",
+      one_med[0]["given_at"] == "21:40" and one_med[1]["given_at"] is None)
+check("без лекарств в заметках — карточек нет",
+      med_cards([{"dt": "2026-11-25 21:40", "t": 38.0, "note": ""}], now) == [])
+
+rows = history_rows(dash)
+check("история: свежая сверху", rows[0]["time"] == "21:40")
+check("история: дельта к предыдущему", rows[0]["delta_text"] == "−0,4 с 19:40")
+check("история: у самой старой дельты нет", rows[-1]["delta_text"] is None)
+check("история: плиточки отделены от текста", rows[0]["note"] == "" and rows[0]["symptoms"] == ["вялость", "спит"])
+check("история: текст заметки и препарат", rows[1]["note"] == "нурофен 5 мл" and rows[1]["med"] == "нурофен")
+check("история: limit работает", len(history_rows(dash, limit=2)) == 2)
+
+bars, info = chart_bars(dash, now, hours=24)
+check("график: столбики по времени", [b["time"] for b in bars] == ["17:30", "19:40", "21:40"])
+check("график: прохладнее = ниже столбик", bars[2]["height"] < bars[1]["height"])
+check("график: сводка за сутки", info["count"] == 3 and info["max_t"] == 39.0 and info["min_t"] == 38.6)
+check("график: пусто без записей", chart_bars([], now) == ([], None))
+check("график: старые записи не попадают",
+      chart_bars([{"dt": "2026-11-24 10:00", "t": 38.0, "note": ""}], now)[1] is None)
+check("график: высоты в диапазоне 0..1", all(0.0 <= b["height"] <= 1.0 for b in bars))
+
 print()
 print("Все проверки пройдены.")
