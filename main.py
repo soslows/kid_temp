@@ -813,6 +813,8 @@ def main(page: ft.Page):
                                 dialog_title="Выбери CSV-файл с копией",
                                 allow_multiple=False,
                                 with_data=True,
+                                # непустой accept: иначе Хром на Android может уводить выбор файла в камеру
+                                allowed_extensions=["csv"],
                             ),
                             style=ft.ButtonStyle(
                                 shape=ft.RoundedRectangleBorder(radius=14), bgcolor=CARD, color=TEXT
