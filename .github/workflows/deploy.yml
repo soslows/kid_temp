@@ -15,10 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,6 +32,10 @@ jobs:
       - name: Build web
         run: flet build web --yes --base-url /kid_temp/ --no-rich-output
 
+      # Тесты логики до публикации: красная сборка на сайт не уезжает
+      - name: Запуск тестов логики
+        run: python test_logic.py
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
@@ -44,10 +45,31 @@ jobs:
           path: build/web
           retention-days: 3
 
+  # Деплой отдельным джобом (как в официальном шаблоне GitHub Pages): артефакт к этому
+  # моменту уже виден API. В одном джобе deploy-pages иногда его не находит:
+  # «No artifacts named "github-pages" were found for this workflow run».
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment_retry.outputs.page_url || steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
+        continue-on-error: true
         uses: actions/deploy-pages@v4
         with:
           error_count: 15
           reporting_interval: 3000
+          timeout: 600000
+
+      # Повтор: сбой почти всегда транзиентный (метаданные артефакта ещё не видны API)
+      - name: Deploy to GitHub Pages (повтор после сбоя)
+        id: deployment_retry
+        if: steps.deployment.outcome == 'failure'
+        uses: actions/deploy-pages@v4
+        with:
+          error_count: 30
+          reporting_interval: 5000
           timeout: 600000
