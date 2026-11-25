@@ -27,7 +27,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install flet
-        run: pip install flet==1.0.0
+        run: pip install flet==1.1.3
 
       - name: Build web
         run: flet build web --yes --base-url /kid_temp/ --no-rich-output

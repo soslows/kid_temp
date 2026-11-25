@@ -658,11 +658,11 @@ def main(page: ft.Page):
         await refresh()
 
     def close_dlg(e):
-        page.close_dialog()
+        page.pop_dialog()
 
     async def clear_all(e):
         """«Очистить всё» после подтверждения: удаляет все записи."""
-        page.close_dialog()
+        page.pop_dialog()
         await save_records([])
         await refresh()
 
@@ -746,7 +746,7 @@ def main(page: ft.Page):
                 item["note"] = note
                 break
         await save_records(records)
-        page.close_dialog()
+        page.pop_dialog()
         await refresh()
 
     # --- копия записей: выгрузка в CSV и загрузка обратно (в шестерёнке) ---
