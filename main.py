@@ -258,21 +258,11 @@ def main(page: ft.Page):
                             color=TEXT2,
                             text_align=ft.TextAlign.CENTER,
                         ),
-                        ft.Button(
-                            "Записать измерение",
-                            on_click=lambda e: choose_tab("diary"),
-                            style=ft.ButtonStyle(
-                                shape=ft.RoundedRectangleBorder(radius=16),
-                                bgcolor=INK,
-                                color=ON_INK,
-                                padding=ft.Padding(24, 16, 24, 16),
-                            ),
-                        ),
                     ],
                     spacing=12,
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
-                padding=ft.Padding(24, 30, 24, 30),
+                padding=ft.Padding(24, 30, 24, 14),
                 alignment=ft.Alignment(0, 0),
             )
 
@@ -356,6 +346,28 @@ def main(page: ft.Page):
         if not shown_any:
             controls.append(ft.Text("Ничего не отмечено", size=13.5, color=TEXT3))
         return ft.Column(controls, spacing=8)
+
+    def record_button():
+        """Небольшая кнопка «Записать измерение» — на «Главной» видна всегда.
+
+        Ведёт на «Дневник» (там форма). Ширину по содержимому: Row с центрированием,
+        чтобы кнопка не растягивалась на весь экран.
+        """
+        return ft.Row(
+            [
+                ft.Button(
+                    "Записать измерение",
+                    on_click=lambda e: choose_tab("diary"),
+                    style=ft.ButtonStyle(
+                        shape=ft.RoundedRectangleBorder(radius=14),
+                        bgcolor=INK,
+                        color=ON_INK,
+                        padding=ft.Padding(18, 10, 18, 10),
+                    ),
+                )
+            ],
+            alignment=ft.MainAxisAlignment.CENTER,
+        )
 
     def meds_list(records, now):
         """Лекарства: капля-иконка, «дали в HH:MM · прошло …», статус справа."""
@@ -466,7 +478,11 @@ def main(page: ft.Page):
 
     def home_blocks(records, now):
         """Главная — порядок блоков как в макете v4."""
-        blocks = [top_bar(), hero(records)]
+        blocks = [
+            top_bar(),
+            hero(records),
+            ft.Container(record_button(), padding=ft.Padding(16, 0, 16, 8)),
+        ]
         if not records:
             return blocks
         meds = meds_list(records, now)
