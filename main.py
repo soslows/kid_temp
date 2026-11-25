@@ -99,13 +99,20 @@ def demo_records():
 
 
 def field_style(**kwargs):
-    """Общий вид полей ввода: белые, скруглённые, акцентная рамка в фокусе."""
+    """Общий вид полей ввода: белые, скруглённые, акцентная рамка в фокусе (Flet 1.0: через border)."""
     base = dict(
         filled=True,
         fill_color=CARD,
-        border_radius=14,
-        border_color=FIELD_BORDER,
-        focused_border_color=ACCENT,
+        border={
+            ft.ControlState.DEFAULT: ft.OutlineInputBorder(
+                border_radius=14,
+                side=ft.BorderSide(color=FIELD_BORDER),
+            ),
+            ft.ControlState.FOCUSED: ft.OutlineInputBorder(
+                border_radius=14,
+                side=ft.BorderSide(color=ACCENT, width=2),
+            ),
+        },
         cursor_color=ACCENT,
     )
     base.update(kwargs)

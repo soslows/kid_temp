@@ -1,0 +1,18 @@
+[project]
+name = "kid-temp"
+version = "0.1.0"
+description = "Дневник температуры ребёнка: измерения, график, симптомы, лекарства. Данные хранятся только на устройстве."
+requires-python = ">=3.10"
+dependencies = ["flet==1.1.3"]
+
+[tool.flet]
+# Идентификатор приложения для Android/AAB: ru.soslows.kidtemp
+# Выбирается один раз навсегда — смена = для магазина это другое приложение.
+org = "ru.soslows"
+bundle_id = "ru.soslows.kidtemp"
+# Имя под иконкой на телефоне
+product = "Дневник температуры"
+company = "soslows"
+copyright = "Copyright (c) 2026 soslows"
+# version_code для Android: каждая новая сборка в магазин должна быть больше
+build_number = 1
