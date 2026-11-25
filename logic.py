@@ -523,12 +523,32 @@ def med_cards(records, now):
     return cards
 
 
-def history_rows(records, limit=None):
+def day_label(dt_text, now):
+    """День записи человеческим языком: «Сегодня» / «Вчера» / «24 ноября».
+
+    Год дописываем только если день не из текущего года (1 января прошлого).
+    """
+    day = datetime.strptime(dt_text[:10], "%Y-%m-%d").date()
+    today = now.date()
+    if day == today:
+        return "Сегодня"
+    if day == today - timedelta(days=1):
+        return "Вчера"
+    if day.year == today.year:
+        return "{} {}".format(day.day, MONTHS_GENITIVE[day.month - 1])
+    return "{} {} {}".format(day.day, MONTHS_GENITIVE[day.month - 1], day.year)
+
+
+def history_rows(records, limit=None, now=None):
     """Строки блока «История»: свежие сверху, с дельтой к предыдущему измерению.
 
-    Каждая строка: dt, time («21:40»), t, note (текст без слов-плиточек), symptoms,
-    med (препарат из заметки или None), delta_text («−0,4 с 17:30» или None).
+    Каждая строка: dt, time («21:40»), when (время с датой для не-сегодняшних:
+    «24.11 13:00»), day («Сегодня»/«Вчера»/«24 ноября» — для группировки),
+    t, note (текст без слов-плиточек), symptoms, med (препарат из заметки или None),
+    delta_text («−0,4 с 17:30», из другого дня — «−0,4 с 24.11 13:00», иначе None).
     """
+    if now is None:
+        now = datetime.now()
     ordered = sort_records(records)
     rows = []
     for index, rec in enumerate(ordered):
@@ -539,10 +559,17 @@ def history_rows(records, limit=None):
             delta = rec["t"] - prev["t"]
             if abs(delta) >= 0.05:
                 sign = "−" if delta < 0 else "+"
-                delta_text = "{}{} с {}".format(sign, format_temperature(abs(delta)), prev["dt"][11:16])
+                if prev["dt"][:10] == rec["dt"][:10]:
+                    prev_when = prev["dt"][11:16]
+                else:
+                    prev_when = format_datetime(prev["dt"])
+                delta_text = "{}{} с {}".format(sign, format_temperature(abs(delta)), prev_when)
+        day = day_label(rec["dt"], now)
         rows.append({
             "dt": rec["dt"],
             "time": rec["dt"][11:16],
+            "when": rec["dt"][11:16] if day == "Сегодня" else format_datetime(rec["dt"]),
+            "day": day,
             "t": rec["t"],
             "note": note_free,
             "symptoms": symptoms,

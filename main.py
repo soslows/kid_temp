@@ -86,16 +86,43 @@ TABS = [
 
 
 def demo_records():
-    """Демо-записи «как в макете» — только при KIDTEMP_DEMO=1, хранилище не трогают."""
+    """Демо-записи «как в макете» — только при KIDTEMP_DEMO=1, хранилище не трогают.
+
+    За несколько дней и больше двадцати записей — чтобы глазами проверять
+    группировку истории «Сегодня / Вчера / 24 ноября».
+    """
     now = datetime.now()
 
     def at(hours_ago):
         return (now - timedelta(hours=hours_ago)).strftime("%Y-%m-%d %H:%M")
 
     return [
+        # сегодня
         {"dt": at(0.4), "t": 38.6, "note": "вялость, спит"},
         {"dt": at(2.4), "t": 39.0, "note": "нурофен 5 мл"},
         {"dt": at(4.5), "t": 39.0, "note": "парацетамол 250 мг"},
+        {"dt": at(6.7), "t": 39.4, "note": "кашель"},
+        {"dt": at(9.2), "t": 39.6, "note": ""},
+        {"dt": at(11.8), "t": 39.1, "note": "вялость, не ест"},
+        # вчера
+        {"dt": at(25.5), "t": 38.9, "note": "насморк"},
+        {"dt": at(28.2), "t": 39.2, "note": "нурофен 5 мл"},
+        {"dt": at(30.4), "t": 39.5, "note": "парацетамол 250 мг"},
+        {"dt": at(33.1), "t": 39.8, "note": "вялость, беспокойный"},
+        {"dt": at(36.0), "t": 39.9, "note": ""},
+        {"dt": at(38.7), "t": 39.6, "note": "не ест"},
+        {"dt": at(41.3), "t": 39.2, "note": "спит"},
+        {"dt": at(44.0), "t": 38.7, "note": ""},
+        # позавчера
+        {"dt": at(49.5), "t": 38.2, "note": "капризный"},
+        {"dt": at(52.3), "t": 38.8, "note": "нурофен 5 мл"},
+        {"dt": at(55.0), "t": 39.1, "note": ""},
+        {"dt": at(57.6), "t": 38.6, "note": "насморк, кашель"},
+        {"dt": at(60.2), "t": 38.1, "note": ""},
+        # три дня назад
+        {"dt": at(70.5), "t": 37.6, "note": "начало болезни"},
+        {"dt": at(74.0), "t": 37.9, "note": ""},
+        {"dt": at(78.3), "t": 37.4, "note": "лёгкая вялость"},
     ]
 
 
@@ -414,11 +441,27 @@ def main(page: ft.Page):
                 rows.append(ft.Divider(height=1, color=DIVIDER))
         return white_card(ft.Column(rows, spacing=0), padding=0)
 
-    def history_list(rows, with_actions=False):
-        """Список истории: температура + время/заметка, справа дельта, при правке — значки."""
+    def history_list(rows, with_actions=False, group_by_day=False):
+        """Список истории: температура + время/заметка, справа дельта, при правке — значки.
+
+        group_by_day — группировка по дням с заголовками «Сегодня» / «Вчера» / «24 ноября»
+        (вся история в «Дневнике»); без неё дата сидит в подзаголовке строки («24.11 13:00»)
+        — компактный список «Главной».
+        """
         controls = []
+        shown_day = None
         for index, row in enumerate(rows):
-            subtitle = row["time"]
+            if group_by_day and row["day"] != shown_day:
+                shown_day = row["day"]
+                if controls:
+                    controls.append(ft.Divider(height=1, color=DIVIDER))
+                controls.append(
+                    ft.Container(
+                        ft.Text(shown_day, size=13, weight=ft.FontWeight.W_600, color=TEXT2),
+                        padding=ft.Padding(15, 10, 15, 2),
+                    )
+                )
+            subtitle = row["time"] if group_by_day else row["when"]
             if row["note"]:
                 subtitle += " · " + row["note"]
             right = []
@@ -550,7 +593,7 @@ def main(page: ft.Page):
             blocks.append(
                 section(
                     "Вся история",
-                    [history_list(rows, with_actions=True), ft.Text(summary, size=13.5, color=TEXT2)],
+                    [history_list(rows, with_actions=True, group_by_day=True), ft.Text(summary, size=13.5, color=TEXT2)],
                 )
             )
         return blocks
@@ -708,7 +751,8 @@ def main(page: ft.Page):
         page.show_dialog(
             ft.AlertDialog(
                 title=ft.Text("Удалить измерение?"),
-                content=ft.Text("{} °C · {}".format(format_temperature(row["t"]), row["time"])),
+                # when — с датой для не-сегодняшних записей («24.11 13:00»)
+                content=ft.Text("{} °C · {}".format(format_temperature(row["t"]), row["when"])),
                 actions=[
                     ft.TextButton("Отмена", on_click=close_dlg),
                     ft.TextButton("Удалить", on_click=lambda ev, r=row: run(delete, r)),
