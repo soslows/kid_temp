@@ -350,8 +350,12 @@ MONTHS_GENITIVE = [
 ]
 WEEKDAYS = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 
-# Плиточки «Как ведёт себя» — порядок как в макете v4.
-SYMPTOMS = ["вялость", "насморк", "спит", "кашель", "не ест", "рвота"]
+# Плиточки — две группы (просьба владелицы 25.11): сначала «что не так»,
+# отдельно «как ведёт себя». Порядок внутри групп — как в макете v4.
+SYMPTOMS = ["вялость", "насморк", "кашель", "рвота", "диарея"]
+BEHAVIOR = ["спит", "не ест", "беспокойный", "капризный"]
+# Все слова-плиточки: по ним разбирается/собирается текст заметки.
+TAGS = SYMPTOMS + BEHAVIOR
 
 
 def date_header(now):
@@ -397,7 +401,7 @@ def symptoms_in_note(note_text):
     if not note_text:
         return []
     text = note_text.lower()
-    return [word for word in SYMPTOMS if word in text]
+    return [word for word in TAGS if word in text]
 
 
 def _drop_word(text, word):
@@ -420,7 +424,7 @@ def note_split(note_text):
     text = note_text or ""
     chosen = symptoms_in_note(text)
     rest = text
-    for word in SYMPTOMS:
+    for word in TAGS:
         rest = _drop_word(rest, word)
     parts = [part.strip(" ,.;\t") for part in rest.replace(";", ",").split(",")]
     return ", ".join(part for part in parts if part), chosen
@@ -433,7 +437,7 @@ def note_join(free_text, symptoms):
     + плиточка «вялость» остаётся одной фразой).
     """
     base = (free_text or "").strip(" ,;")
-    chosen = [word for word in SYMPTOMS if word in set(symptoms or [])]
+    chosen = [word for word in TAGS if word in set(symptoms or [])]
     missing = [word for word in chosen if word not in base.lower()]
     if not missing:
         return base

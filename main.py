@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 import flet as ft
 
 from logic import (
+    BEHAVIOR,
     SYMPTOMS,
     chart_bars,
     compute_stats,
@@ -314,15 +315,15 @@ def main(page: ft.Page):
             padding=ft.Padding(16, 8, 16, 18),
         )
 
-    def chips(selected, on_toggle=None):
-        """Плиточки «Как ведёт себя»: выбранная — мягко-чёрная, остальные белые.
+    def chips(words, selected, on_toggle=None):
+        """Плиточки одной группы: выбранная — мягко-чёрная, остальные белые.
 
         Без alignment и фиксированной высоты: у Container с alignment нет своей ширины,
         и внутри строки с переносом он растягивался на всю ширину — плиточки вставали
         по одной в строку. Высоту дают симметричные отступы 11+11 при строке текста ~20.
         """
         controls = []
-        for word in SYMPTOMS:
+        for word in words:
             active = word in selected
             controls.append(
                 ft.Container(
@@ -336,6 +337,25 @@ def main(page: ft.Page):
                 )
             )
         return ft.Row(controls, wrap=True, spacing=8, run_spacing=8)
+
+    def chips_groups(selected, on_toggle=None, only_selected=False):
+        """Плиточки двумя подписанными блоками: «Симптомы» и «Как ведёт себя».
+
+        only_selected — для «Главной»: показываем только отмеченное в последней записи,
+        без on_toggle (плиточки там неинтерактивные — решение владельца).
+        """
+        controls = []
+        shown_any = False
+        for title, words in (("Симптомы", SYMPTOMS), ("Как ведёт себя", BEHAVIOR)):
+            shown = [word for word in words if word in selected] if only_selected else list(words)
+            if not shown:
+                continue
+            shown_any = True
+            controls.append(section_title(title))
+            controls.append(chips(shown, selected, on_toggle))
+        if not shown_any:
+            controls.append(ft.Text("Ничего не отмечено", size=13.5, color=TEXT3))
+        return ft.Column(controls, spacing=8)
 
     def meds_list(records, now):
         """Лекарства: капля-иконка, «дали в HH:MM · прошло …», статус справа."""
@@ -453,7 +473,7 @@ def main(page: ft.Page):
         if meds is not None:
             blocks.append(section("Лекарства", [meds]))
         newest = history_rows(records, limit=1)[0]
-        blocks.append(section("Как ведёт себя", [chips(newest["symptoms"])]))
+        blocks.append(section("Симптомы и поведение", [chips_groups(newest["symptoms"], only_selected=True)]))
         blocks.append(
             section(
                 "История",
@@ -485,8 +505,7 @@ def main(page: ft.Page):
                 [
                     ft.Row([field_temp, field_time], spacing=10),
                     ft.Divider(height=1, color=DIVIDER),
-                    section_title("Как ведёт себя"),
-                    chips(state["form_symptoms"], toggle_form),
+                    chips_groups(state["form_symptoms"], toggle_form),
                     field_note,
                     text_error,
                     ft.Button(
@@ -704,10 +723,10 @@ def main(page: ft.Page):
                 state["edit_symptoms"].remove(word)
             else:
                 state["edit_symptoms"].append(word)
-            chips_slot.controls = [chips(state["edit_symptoms"], toggle_edit)]
+            chips_slot.controls = [chips_groups(state["edit_symptoms"], toggle_edit)]
             page.update()
 
-        chips_slot.controls = [chips(state["edit_symptoms"], toggle_edit)]
+        chips_slot.controls = [chips_groups(state["edit_symptoms"], toggle_edit)]
         page.show_dialog(
             ft.AlertDialog(
                 title=ft.Text("Правка записи"),
@@ -715,7 +734,6 @@ def main(page: ft.Page):
                     [
                         field_edit_temp,
                         field_edit_time,
-                        section_title("Как ведёт себя"),
                         chips_slot,
                         field_edit_note,
                         text_edit_error,
