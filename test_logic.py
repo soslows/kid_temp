@@ -75,8 +75,8 @@ check("40 мин", format_elapsed_since("2026-09-22 12:20", datetime(2026, 9, 22
 now = datetime(2026, 9, 22, 13, 0)
 status = med_status_text(meds_records, now)
 check("3,5 ч после нурофена — ещё нельзя", "3 ч 30 мин" in status and "нельзя раньше 15:30" in status)
-check("парацетамол тоже в статусе (давали в 08:00) — уже можно",
-      "парацетамол" in status and "Уже можно" in status)
+check("парацетамол: нельзя раньше 13:30 (чередование 4 ч после нурофена)",
+      "парацетамол" in status and "нельзя раньше 13:30" in status and "после нурофена" in status)
 
 soon = datetime(2026, 9, 22, 10, 0)
 check("через полчаса после приёма — нельзя", "нельзя" in med_status_text(meds_records, soon))
@@ -99,21 +99,25 @@ lines = med_status_lines(both_records, datetime(2026, 9, 22, 18, 0))
 check("обе строки, свежий препарат сверху",
       len(lines) == 2 and lines[0].startswith("💊 нурофен") and lines[1].startswith("💊 парацетамол"))
 check("нурофен: свой интервал 6 ч (нельзя раньше 23:30)", "нельзя раньше 23:30" in lines[0])
-check("парацетамол: чередование 2 ч после нурофена (нельзя раньше 19:30)",
-      "нельзя раньше 19:30" in lines[1] and "после нурофена" in lines[1])
+check("парацетамол: чередование 4 ч после нурофена (нельзя раньше 21:30)",
+      "нельзя раньше 21:30" in lines[1] and "после нурофена" in lines[1])
 
 lines = med_status_lines(both_records, datetime(2026, 9, 22, 20, 0))
-check("в 20:00 парацетамол уже можно", "Уже можно" in lines[1])
+check("в 20:00 парацетамол ещё нельзя (чередование 4 ч)", "нельзя" in lines[1])
 check("в 20:00 нурофен ещё нельзя", "нельзя" in lines[0])
+
+lines = med_status_lines(both_records, datetime(2026, 9, 22, 22, 0))
+check("в 22:00 парацетамол уже можно", "Уже можно" in lines[1])
+check("в 22:00 нурофен ещё нельзя (свой 6 ч)", "нельзя" in lines[0])
 
 # второй препарат ещё не давали — подсказка, когда можно начать
 only_nurofen = [{"dt": "2026-09-22 17:30", "t": 38.9, "note": "дали нурофен"}]
 lines = med_status_lines(only_nurofen, datetime(2026, 9, 22, 18, 0))
 check("оба препарата даже если второй не давали", len(lines) == 2)
-check("подсказка: парацетамол можно с 19:30",
-      "парацетамол: ещё не давали" in lines[1] and "19:30" in lines[1])
-lines = med_status_lines(only_nurofen, datetime(2026, 9, 22, 21, 0))
-check("прошло 2 ч — парацетамол можно", "Уже можно" in lines[1])
+check("подсказка: парацетамол можно с 21:30 (чередование 4 ч)",
+      "парацетамол: ещё не давали" in lines[1] and "21:30" in lines[1])
+lines = med_status_lines(only_nurofen, datetime(2026, 9, 22, 22, 0))
+check("прошло 4 ч — парацетамол можно", "Уже можно" in lines[1])
 
 # --- время записи: задним числом и правка ---
 from logic import parse_time_hhmm, record_datetime, replace_time
@@ -251,8 +255,10 @@ check("нурофен: дали в 19:40, прошло 2 ч 20 мин",
 check("нурофен: нельзя ещё 3 ч 40 мин (свой интервал 6 ч, до 01:40)",
       cards[0]["ok"] is False and cards[0]["status"] == "нельзя ещё 3 ч 40 мин"
       and cards[0]["allowed_at"] == "01:40")
-check("парацетамол: уже можно (чередование до 21:40, сейчас 22:00)",
-      cards[1]["ok"] is True and cards[1]["status"] == "уже можно" and cards[1]["allowed_at"] == "21:40")
+check("парацетамол: нельзя ещё 1 ч 40 мин (чередование 4 ч с нурофеном, до 23:40)",
+      cards[1]["ok"] is False
+      and cards[1]["status"] == "нельзя ещё 1 ч 40 мин (перекрёстный интервал с нурофеном)"
+      and cards[1]["allowed_at"] == "23:40")
 one_med = med_cards([{"dt": "2026-11-25 21:40", "t": 38.0, "note": "нурофен 5 мл"}], now)
 check("препарат, которого не давали — карточка-подсказка",
       one_med[0]["given_at"] == "21:40" and one_med[1]["given_at"] is None)
@@ -273,7 +279,7 @@ cross = med_cards([
 ], now)
 check("перекрёстный интервал подписан с названием препарата",
       cross[1]["ok"] is False
-      and cross[1]["status"] == "нельзя ещё 1 ч (перекрёстный интервал с нурофеном)")
+      and cross[1]["status"] == "нельзя ещё 3 ч (перекрёстный интервал с нурофеном)")
 check("свой интервал — без пометки про перекрёстный",
       cross[0]["status"] == "нельзя ещё 5 ч" and "перекрёстный" not in cross[0]["status"])
 

@@ -45,6 +45,19 @@ from logic import (
 # Ключ, под которым записи лежат в локальном хранилище (SharedPreferences).
 STORAGE_KEY = "kidtemp_entries"
 
+# Флаг «первый запуск пройден»: онбординг с дисклеймером показываем ровно один раз.
+ONBOARD_KEY = "kidtemp_onboarded"
+
+# Красные флаги — срочно к врачу. Показываются в онбординге и в «Важно» из шестерёнки.
+# Формулировки намеренно общие (не диагнозы): приложение не медицинское изделие.
+RED_FLAGS = [
+    "ребёнку меньше 3 месяцев, а температура 38 °C и выше",
+    "судороги",
+    "39 °C и выше не снижается после жаропонижающего",
+    "ребёнок вялый, не пьёт, трудно разбудить",
+    "сыпь, затруднённое дыхание, бледная и холодная кожа",
+]
+
 # Демо-записи — только для визуальной проверки экрана (в обычном запуске не используются).
 DEMO = os.environ.get("KIDTEMP_DEMO") == "1"
 
@@ -909,6 +922,58 @@ def main(page: ft.Page):
 
     file_picker.on_result = on_picker_result
 
+    def disclaimer_block():
+        """Дисклеймер «о здоровье» — один текст для онбординга и для «Важно» в шестерёнке.
+
+        Формулировки намеренно нейтральные: без имён медорганизаций и без «диагнозов» —
+        так требует модерация RuStore (раздел про контент, связанный со здоровьем).
+        """
+        return ft.Column(
+            [
+                ft.Text("Это дневник, а не врач", size=15, weight=ft.FontWeight.W_600, color=TEXT),
+                ft.Text(
+                    "Приложение не ставит диагноз и не заменяет консультацию врача. "
+                    "Оно не назначает лечение и не считает дозы — дозу смотрите "
+                    "в инструкции к препарату или у врача.",
+                    size=14,
+                    color=TEXT2,
+                ),
+                ft.Text(
+                    "Подсказки про интервалы между жаропонижающими основаны на клинических "
+                    "рекомендациях и инструкциях по применению препаратов.",
+                    size=14,
+                    color=TEXT2,
+                ),
+                ft.Text("Срочно к врачу или в скорую, если:", size=14, weight=ft.FontWeight.W_600, color=ERROR),
+                ft.Column(
+                    [ft.Text("• " + flag, size=14, color=TEXT) for flag in RED_FLAGS],
+                    spacing=4,
+                    tight=True,
+                ),
+                ft.Text(
+                    "Записи хранятся только на этом устройстве и никуда не отправляются. "
+                    "Приложение сделано родителем, а не медицинской организацией.",
+                    size=13,
+                    color=TEXT3,
+                ),
+            ],
+            spacing=8,
+            tight=True,
+        )
+
+    def health_dialog():
+        """Окно «Важно: о здоровье» — открывается из шестерёнки в любой момент."""
+        return ft.AlertDialog(
+            title=ft.Text("Важно: о здоровье"),
+            content=ft.Container(disclaimer_block(), width=300),
+            actions=[ft.TextButton("Закрыть", on_click=close_dlg)],
+        )
+
+    def open_health(e):
+        """Из настроек: закрываем их и показываем «Важно» (два диалога в стопке не держим)."""
+        page.pop_dialog()
+        page.show_dialog(health_dialog())
+
     def open_settings(e):
         """Шестерёнка: копия записей и очистка — долой из основного экрана."""
         page.show_dialog(
@@ -942,6 +1007,14 @@ def main(page: ft.Page):
                         ),
                         text_backup,
                         ft.Divider(height=1, color=DIVIDER),
+                        ft.Button(
+                            "Важно: о здоровье",
+                            on_click=open_health,
+                            style=ft.ButtonStyle(
+                                shape=ft.RoundedRectangleBorder(radius=14), bgcolor=CARD, color=TEXT
+                            ),
+                        ),
+                        ft.Divider(height=1, color=DIVIDER),
                         ft.TextButton(
                             "Очистить всё",
                             on_click=ask_clear,
@@ -955,6 +1028,67 @@ def main(page: ft.Page):
                 actions=[ft.TextButton("Закрыть", on_click=close_dlg)],
             )
         )
+
+    # ---------------- онбординг (первый запуск) ----------------
+
+    async def save_onboarded():
+        await prefs.set(ONBOARD_KEY, "1")
+
+    async def check_onboarding():
+        """Первый запуск: показываем экран с дисклеймером, если он ещё не пройден."""
+        if DEMO:
+            return
+        try:
+            done = await prefs.get(ONBOARD_KEY)
+        except Exception:
+            done = "1"  # хранилище не ответило — не блокируем работу приложения
+        if not done:
+            onboard.visible = True
+            page.update()
+
+    def onboard_start(e):
+        """«Понятно, начать»: прячем экран и запоминаем, что онбординг пройден."""
+        onboard.visible = False
+        page.update()
+        run(save_onboarded)
+
+    onboard = ft.Container(
+        ft.Column(
+            [
+                ft.Text("Дневник температуры", size=26, weight=ft.FontWeight.W_600, color=TEXT),
+                ft.Text(
+                    "Записывай температуру, симптомы и лекарства за пару секунд — "
+                    "приложение подскажет, через сколько снова можно дать жаропонижающее.",
+                    size=15,
+                    color=TEXT2,
+                ),
+                ft.Text(
+                    "Всё хранится только на этом телефоне: без регистрации, "
+                    "ничего не уходит в интернет.",
+                    size=15,
+                    color=TEXT2,
+                ),
+                ft.Container(height=4),
+                disclaimer_block(),
+                ft.Container(height=8),
+                ft.Button(
+                    "Понятно, начать",
+                    on_click=onboard_start,
+                    height=52,
+                    style=ft.ButtonStyle(
+                        shape=ft.RoundedRectangleBorder(radius=14), bgcolor=INK, color=ON_INK
+                    ),
+                ),
+            ],
+            spacing=12,
+            expand=True,
+            scroll=ft.ScrollMode.AUTO,
+        ),
+        padding=ft.Padding(24, 20, 24, 20),
+        bgcolor=BG,
+        visible=False,
+        expand=True,
+    )
 
     # ---------------- сборка окна ----------------
 
@@ -995,8 +1129,15 @@ def main(page: ft.Page):
     page.views[0].can_pop = False
     page.views[0].on_confirm_pop = confirm_back
 
-    page.add(ft.Stack(veil() + [ft.Column([body, nav_box], spacing=0, expand=True)], expand=True))
+    page.add(
+        ft.Stack(
+            veil()
+            + [ft.Column([body, nav_box], spacing=0, expand=True), onboard],
+            expand=True,
+        )
+    )
     run(refresh)
+    run(check_onboarding)
 
 
 if __name__ == "__main__":
