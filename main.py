@@ -12,6 +12,7 @@
 # Демо-данные для проверки вида:    KIDTEMP_DEMO=1 python main.py
 # Тесты вычислений:                 python test_logic.py
 
+import asyncio
 import json
 import os
 from datetime import datetime, timedelta
@@ -47,6 +48,9 @@ STORAGE_KEY = "kidtemp_entries"
 
 # Флаг «первый запуск пройден»: онбординг с дисклеймером показываем ровно один раз.
 ONBOARD_KEY = "kidtemp_onboarded"
+
+# Онбординг — три шага-свайпа (макет mockup/onboarding-v2.html, утверждён 26.11.2026).
+ONBOARD_LAST = 2
 
 # Красные флаги — когда нужен врач/скорая СЕЙЧАС. Сверено 26.11.2026, источники:
 #   - Союз педиатров России, памятка «Лихорадка» (срочная помощь): нарастающая
@@ -99,6 +103,7 @@ OK_SURF = "#DFF0E0"
 WARN = "#B98A2E"
 WARN_SURF = "#F6ECCF"
 ERROR = "#C0554B"
+ERROR_SURF = "#F9E4E0"    # мягкая красная карточка красных флагов (шаг 3 онбординга)
 FIELD_BORDER = "#E3DCD1"
 CHIP_BORDER = "#E8E1D6"
 DIVIDER = "#EDE7DC"
@@ -219,11 +224,24 @@ def main(page: ft.Page):
     }
 
     # --- постоянные поля формы (создаём один раз: значения переживают перерисовку) ---
+
+    def hide_field_error(e=None):
+        """Правка поля снимает старую ошибку: она относилась к прежнему вводу.
+
+        Иначе «Введите число…» висело поверх уже правильного «36,6» до нажатия
+        «Записать» — тестер читал это как «поле не приняли» (нашлось 26.11).
+        """
+        if text_error.visible:
+            text_error.value = ""
+            text_error.visible = False
+            page.update()
+
     field_temp = ft.TextField(
         label="Температура, °C",
         hint_text="36,6",
         keyboard_type=ft.KeyboardType.DATETIME,  # клавиатура с запятой
         expand=True,
+        on_change=hide_field_error,
         **field_style(),
     )
     field_time = ft.TextField(
@@ -231,6 +249,7 @@ def main(page: ft.Page):
         hint_text="13:40",
         keyboard_type=ft.KeyboardType.DATETIME,  # на iPhone клавиатура с «:»
         width=150,
+        on_change=hide_field_error,
         **field_style(),
     )
     field_note = ft.TextField(
@@ -357,7 +376,7 @@ def main(page: ft.Page):
                         vertical_alignment=ft.CrossAxisAlignment.END,
                         alignment=ft.MainAxisAlignment.CENTER,
                     ),
-                    ft.Row(meta, spacing=10, alignment=ft.MainAxisAlignment.CENTER),
+                    ft.Row(meta, spacing=10, run_spacing=4, wrap=True, alignment=ft.MainAxisAlignment.CENTER),
                 ],
                 spacing=2,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -764,7 +783,8 @@ def main(page: ft.Page):
             return
 
         records = await load_records()
-        records.append({"dt": dt_str, "t": temp, "note": note_join(field_note.value, state["form_symptoms"])})
+        # Вставляем в начало: при одинаковом времени (одна минута) новая запись выше.
+        records.insert(0, {"dt": dt_str, "t": temp, "note": note_join(field_note.value, state["form_symptoms"])})
         await save_records(records)
 
         field_temp.value = ""
@@ -949,42 +969,95 @@ def main(page: ft.Page):
             tight=True,
         )
 
-    def onboarding_points():
-        """Короткий первый экран: три мысли и красные флаги. Подробности — в «Важно».
+    def onboard_art(fill, icon, badge_icon=None, badge_color=OK):
+        """Иллюстрация шага: иконка на пастельном круге + белый кружок-бейдж (как в макете)."""
+        circle = ft.Container(
+            content=ft.Icon(icon, size=62, color=TEXT),
+            width=148,
+            height=148,
+            border_radius=74,
+            alignment=ft.Alignment.CENTER,
+            gradient=ft.LinearGradient(
+                begin=ft.Alignment(-0.6, -1.0), end=ft.Alignment(0.6, 1.0), colors=fill
+            ),
+        )
+        if badge_icon is None:
+            return circle
+        badge = ft.Container(
+            content=ft.Icon(badge_icon, size=20, color=badge_color),
+            width=40,
+            height=40,
+            border_radius=20,
+            bgcolor=CARD,
+            alignment=ft.Alignment.CENTER,
+            shadow=SHADOW_SM,
+            right=2,
+            bottom=6,
+        )
+        return ft.Stack([circle, badge], width=148, height=148)
 
-        Просьба владелицы 26.11: в онбординге простыню не читают, поэтому здесь
-        только самое нужное; длинный дисклеймер живёт в шестерёнке → «Важно: о здоровье».
-        """
-        return ft.Column(
-            [
-                ft.Text(
-                    "Записывай температуру, симптомы и лекарства за пару секунд — "
-                    "приложение подскажет, когда можно следующую дозу.",
-                    size=15,
-                    color=TEXT2,
-                ),
-                ft.Text(
-                    "Копию всех записей можно сохранить в файл (CSV) — удобно показать врачу на приёме.",
-                    size=15,
-                    color=TEXT2,
-                ),
-                ft.Text(
-                    "Это дневник, а не врач: диагноз не ставит, лечение и дозы не считает.",
-                    size=15,
-                    weight=ft.FontWeight.W_600,
-                    color=TEXT,
-                ),
-                ft.Text("Срочно к врачу или в скорую:", size=14, weight=ft.FontWeight.W_600, color=ERROR),
-                bullet_list(RED_FLAGS),
-                ft.Text(
-                    "Записи хранятся только на этом телефоне. Приложение сделано родителем, "
-                    "а не медицинской организацией.",
-                    size=13,
-                    color=TEXT3,
-                ),
-            ],
-            spacing=10,
-            tight=True,
+    def onboard_flags():
+        """Красные флаги в мягкой красной карточке — третий шаг онбординга."""
+        rows = []
+        for i, flag in enumerate(RED_FLAGS):
+            rows.append(
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            ft.Container(width=6, height=6, border_radius=3, bgcolor=ERROR),
+                            ft.Text(flag, size=14, color=TEXT, expand=True),
+                        ],
+                        spacing=10,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    padding=ft.Padding(0, 6, 0, 6),
+                    border=None
+                    if i == len(RED_FLAGS) - 1
+                    else ft.Border(bottom=ft.BorderSide(1, "#EFCEC7")),
+                )
+            )
+        return ft.Container(
+            ft.Column(
+                [
+                    ft.Text("СРОЧНО К ВРАЧУ, ЕСЛИ", size=12, weight=ft.FontWeight.W_600, color=ERROR),
+                    *rows,
+                ],
+                spacing=0,
+                tight=True,
+            ),
+            bgcolor=ERROR_SURF,
+            border_radius=20,
+            padding=ft.Padding(18, 16, 18, 12),
+        )
+
+    def onboard_step(art, title, lead, who=None, flags=False):
+        """Один шаг: иллюстрация, заголовок, пояснение, «кто сделал», красные флаги."""
+        kids = [
+            ft.Container(art, margin=ft.Margin.only(top=20, bottom=28)),
+            ft.Text(
+                title,
+                size=25,
+                weight=ft.FontWeight.W_600,
+                color=TEXT,
+                text_align=ft.TextAlign.CENTER,
+            ),
+            ft.Text(lead, size=15, color=TEXT2, text_align=ft.TextAlign.CENTER),
+        ]
+        if who:
+            kids.append(ft.Text(who, size=13, color=TEXT3, text_align=ft.TextAlign.CENTER))
+        if flags:
+            kids.append(ft.Container(onboard_flags(), margin=ft.Margin.only(top=20)))
+        return ft.Container(
+            ft.Column(
+                kids,
+                spacing=10,
+                tight=True,
+                scroll=ft.ScrollMode.AUTO,
+                expand=True,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.Padding(28, 0, 28, 8),
+            expand=True,
         )
 
     def disclaimer_block():
@@ -1093,13 +1166,35 @@ def main(page: ft.Page):
             )
         )
 
-    # ---------------- онбординг (первый запуск) ----------------
+    # ---------------- онбординг (первый запуск): три шага-свайпа ----------------
+    # Макет: mockup/onboarding-v2.html (утверждён владелицей 26.11.2026).
+    # Три шага в PageView (свайп), пастельный круг с иконкой, точки-прогресс,
+    # «Пропустить» сверху справа, одна тёмная кнопка внизу: «Далее» → «Понятно, начать».
+    # Строку «Приложение сделано родителем, а не медицинской организацией» не убирать.
 
     async def save_onboarded():
-        await prefs.set(ONBOARD_KEY, "1")
+        """Пишет флаг «онбординг пройден» и повторяет запись в начале сессии.
+
+        Первые секунды после запуска хранилище ещё грузится с диска и МОЛЧА теряет
+        запись (поймано на эмуляторе 26.11: запись на 1-й секунде не переживала
+        force-stop). Поэтому пишем несколько раз, растянуто по времени — к 10-й
+        секунде сессии хранилище уже рабочее, и хотя бы одна запись ложится на диск.
+        """
+        for delay in (0.0, 2.0, 5.0, 10.0):
+            if delay:
+                await asyncio.sleep(delay)
+            try:
+                await prefs.set(ONBOARD_KEY, "1")
+            except Exception:
+                pass
 
     async def check_onboarding():
-        """Первый запуск: показываем экран с дисклеймером, если он ещё не пройден."""
+        """Первый запуск: показываем экран с дисклеймером, если он ещё не пройден.
+
+        Отметку «показан» стараемся поставить сразу, в момент показа (фоновой
+        задачей с повторами): иначе убийство приложения посреди онбординга
+        показывало его заново при каждом запуске (поймано на эмуляторе 26.11).
+        """
         if DEMO:
             return
         try:
@@ -1109,38 +1204,143 @@ def main(page: ft.Page):
         if not done:
             onboard.visible = True
             page.update()
+            run(save_onboarded)
 
-    def onboard_start(e):
-        """«Понятно, начать»: прячем экран и запоминаем, что онбординг пройден."""
+    async def onboard_start(e=None):
+        """«Пропустить» / «Понятно, начать»: прячем экран и запоминаем, что пройден."""
         onboard.visible = False
         page.update()
-        run(save_onboarded)
+        run(save_onboarded)  # повторная запись флага — фоновой задачей
 
-    onboard = ft.Container(
-        ft.Column(
-            [
-                ft.Text("Дневник температуры", size=26, weight=ft.FontWeight.W_600, color=TEXT),
-                onboarding_points(),
-                ft.Container(height=6),
-                ft.Button(
-                    "Понятно, начать",
-                    on_click=onboard_start,
-                    height=52,
-                    style=ft.ButtonStyle(
-                        shape=ft.RoundedRectangleBorder(radius=14), bgcolor=INK, color=ON_INK
-                    ),
+    def build_onboarding():
+        """Онбординг целиком: фон-вуаль, шаги, точки-прогресс и кнопка."""
+        pills = []
+        cur = {"i": 0}  # свой номер шага: selected_index не всегда успевает обновиться
+        cta_text = ft.Text("Далее", size=16, weight=ft.FontWeight.W_600, color=ON_INK)
+
+        def paint(idx):
+            cur["i"] = idx
+            for k, pill in enumerate(pills):
+                active = k == idx
+                pill.width = 22 if active else 7
+                pill.bgcolor = INK if active else TEXT3
+                pill.opacity = 1.0 if active else 0.28
+            cta_text.value = "Понятно, начать" if idx == ONBOARD_LAST else "Далее"
+            page.update()
+
+        def go(idx):
+            idx = max(0, min(ONBOARD_LAST, idx))
+            paint(idx)
+            # run_task ждёт именно корутинную ФУНКЦИЮ (не готовую корутину) и аргументы
+            run(
+                pager.go_to_page,
+                idx,
+                ft.Duration(milliseconds=320),
+                ft.AnimationCurve.EASE_OUT,
+            )
+
+        def on_page_change(e):
+            try:
+                paint(int(e.data))
+            except (TypeError, ValueError):
+                paint(pager.selected_index)
+
+        async def on_cta(e):
+            if cur["i"] >= ONBOARD_LAST:
+                await onboard_start(e)
+            else:
+                go(cur["i"] + 1)
+
+        dots = []
+        for k in range(ONBOARD_LAST + 1):
+            pill = ft.Container(
+                width=22 if k == 0 else 7,
+                height=7,
+                border_radius=99,
+                bgcolor=INK if k == 0 else TEXT3,
+                opacity=1.0 if k == 0 else 0.28,
+            )
+            pills.append(pill)
+            dots.append(
+                ft.Container(
+                    content=pill,
+                    width=24,
+                    height=24,
+                    alignment=ft.Alignment.CENTER,
+                    on_click=lambda e, k=k: go(k),
+                )
+            )
+
+        pager = ft.PageView(
+            controls=[
+                onboard_step(
+                    onboard_art([GRAD_LAV, "#F0EAF9"], ft.Icons.DEVICE_THERMOSTAT_OUTLINED),
+                    "Дневник температуры",
+                    "Температура, симптомы и лекарства — за пару секунд. "
+                    "Подскажет, когда можно следующую дозу.",
+                ),
+                onboard_step(
+                    onboard_art([GRAD_GREEN, "#EAF3EA"], ft.Icons.SMARTPHONE, ft.Icons.LOCK_OUTLINE, OK),
+                    "Только на вашем телефоне",
+                    "Записи никуда не отправляются. Копию можно сохранить файлом и показать врачу на приёме.",
+                    who="Приложение сделано родителем, а не медицинской организацией.",
+                ),
+                onboard_step(
+                    onboard_art([GRAD_PINK, "#FAECEF"], ft.Icons.MENU_BOOK_OUTLINED, ft.Icons.ERROR_OUTLINE, ERROR),
+                    "Это дневник, а не врач",
+                    "Не ставит диагноз и не считает дозы.",
+                    flags=True,
                 ),
             ],
-            spacing=12,
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             expand=True,
-            scroll=ft.ScrollMode.AUTO,
-        ),
-        padding=ft.Padding(24, 20, 24, 20),
-        bgcolor=BG,
-        visible=False,
-        expand=True,
-    )
+            pad_ends=False,
+            keep_page=False,
+            on_change=on_page_change,
+        )
+
+        return ft.Stack(
+            veil()
+            + [
+                ft.Column(
+                    [
+                        ft.Row(
+                            [
+                                ft.TextButton(
+                                    "Пропустить",
+                                    on_click=onboard_start,
+                                    style=ft.ButtonStyle(color=TEXT3),
+                                )
+                            ],
+                            alignment=ft.MainAxisAlignment.END,
+                        ),
+                        pager,
+                        ft.Container(
+                            ft.Column(
+                                [
+                                    ft.Row(dots, spacing=-6, alignment=ft.MainAxisAlignment.CENTER),
+                                    ft.Button(
+                                        content=cta_text,
+                                        on_click=on_cta,
+                                        height=54,
+                                        style=ft.ButtonStyle(
+                                            shape=ft.RoundedRectangleBorder(radius=16),
+                                            bgcolor=INK,
+                                            color=ON_INK,
+                                        ),
+                                    ),
+                                ],
+                                spacing=18,
+                                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                            ),
+                            padding=ft.Padding(24, 0, 24, 26),
+                        ),
+                    ],
+                    spacing=0,
+                    expand=True,
+                )
+            ],
+            expand=True,
+        )
 
     # ---------------- сборка окна ----------------
 
@@ -1180,6 +1380,9 @@ def main(page: ft.Page):
 
     page.views[0].can_pop = False
     page.views[0].on_confirm_pop = confirm_back
+
+    onboard = build_onboarding()
+    onboard.visible = False  # показываем, только если флаг первого запуска не стоит
 
     page.add(
         # SafeArea: без него шапка и шестерёнка уезжают под строку состояния,

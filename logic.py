@@ -31,7 +31,13 @@ def format_datetime(iso_text):
 
 
 def sort_records(records):
-    """Свежие записи сверху."""
+    """Свежие записи сверху. Одинаковое время (одна минута) — позже добавленная выше.
+
+    Хранилище держит записи «свежие первыми»: add() вставляет новую запись в начало
+    списка. Сортировка стабильная, поэтому при равном dt порядок списка сохраняется —
+    без индексов и второго ключа (прежний вариант с key=(dt, index) на устройстве
+    разложил записи одной минуты старыми вверх — поймано на эмуляторе 26.11).
+    """
     return sorted(records, key=lambda r: r["dt"], reverse=True)
 
 
@@ -412,10 +418,11 @@ def latest_record(records):
 
 
 def temp_trend(records):
-    """Насколько и за сколько часов изменилась температура к последнему измерению.
+    """Насколько и за сколько МИНУТ изменилась температура к последнему измерению.
 
-    Сравниваем последнее измерение с предыдущим. Возвращает (delta, hours) или None,
-    если измерений меньше двух. Часы — целые, минимум 1 (иначе выходило «за 0 ч»).
+    Сравниваем последнее измерение с предыдущим. Возвращает (delta, minutes) или None,
+    если измерений меньше двух. Минуты, а не целые часы: разница в 8 минут, подписанная
+    «за 1 ч», врёт про скорость изменения (нашлось тестером 26.11).
     """
     ordered = sort_records(records)
     if len(ordered) < 2:
@@ -423,19 +430,24 @@ def temp_trend(records):
     last, prev = ordered[0], ordered[1]
     delta = last["t"] - prev["t"]
     span = datetime.strptime(last["dt"], "%Y-%m-%d %H:%M") - datetime.strptime(prev["dt"], "%Y-%m-%d %H:%M")
-    hours = int(span.total_seconds() / 3600.0 + 0.5)
-    return delta, max(1, hours)
+    minutes = int(span.total_seconds() // 60)
+    return delta, max(1, minutes)
 
 
 def trend_text(trend):
-    """(delta, hours) -> «−0,4 за 4 ч». Знак «минус» — типографский, как в макете."""
+    """(delta, minutes) -> «−0,4 за 2 ч» / «+0,4 с прошлого измерения».
+
+    Меньше часа — не выдумываем «за 1 ч», а говорим прямо: с прошлого измерения.
+    Решение владелицы 26.11: «+0,4 с прошлого измерения» вместо вранья про час.
+    """
     if trend is None:
         return None
-    delta, hours = trend
+    delta, minutes = trend
+    span = "с прошлого измерения" if minutes < 60 else "за {} ч".format(int(minutes / 60 + 0.5))
     if abs(delta) < 0.05:
-        return "без изменений за {} ч".format(hours)
+        return "без изменений " + span
     sign = "−" if delta < 0 else "+"
-    return "{}{} за {} ч".format(sign, format_temperature(abs(delta)), hours)
+    return "{}{} {}".format(sign, format_temperature(abs(delta)), span)
 
 
 def symptoms_in_note(note_text):
