@@ -1081,6 +1081,7 @@ def main(page: ft.Page):
                 ),
             ],
             spacing=12,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             expand=True,
             scroll=ft.ScrollMode.AUTO,
         ),
@@ -1130,9 +1131,14 @@ def main(page: ft.Page):
     page.views[0].on_confirm_pop = confirm_back
 
     page.add(
-        ft.Stack(
-            veil()
-            + [ft.Column([body, nav_box], spacing=0, expand=True), onboard],
+        # SafeArea: без него шапка и шестерёнка уезжают под строку состояния,
+        # и верхняя половина кружка не нажимается (нашлось на живом прогоне 26.11).
+        ft.SafeArea(
+            ft.Stack(
+                veil()
+                + [ft.Column([body, nav_box], spacing=0, expand=True), onboard],
+                expand=True,
+            ),
             expand=True,
         )
     )
